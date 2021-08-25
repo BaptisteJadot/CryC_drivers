@@ -9,6 +9,7 @@ import numpy as np
 from nifpga import Session, FpgaViState
 from nifpga.status import RpcConnectionErrorError, FpgaBusyInteractiveError, FifoTimeoutError
 from FPGA_utils import build_order, uint16_to_float, float_to_uint16
+import Fastseq_elmts as fs
 import time
 
 class CIR7_driver():
@@ -22,8 +23,8 @@ class CIR7_driver():
 
     def __init__(self, ip_address, bitfile_path, DAC_dict={}):
         """
-        Opens communication and finds the VI objects to control
-        DAC_dict is a dictionnary of each DAC output (with fields 'panel', 'channel', 'lower_limit' and 'upper_limit')
+        Open communication and finds the VI objects to control.
+        DAC_dict is a dictionnary of each DAC output (with fields 'panel', 'channel', 'lower_limit' and 'upper_limit').
         """
         self.ip_address = ip_address
         if DAC_dict == {}:
@@ -60,7 +61,7 @@ class CIR7_driver():
     
     def send_orders(self, orders):
         """
-        Puts orders in the FPGA input buffer and waits for until they are all passed.
+        Put orders in the FPGA input buffer and waits for until they are all passed.
         orders is a list of uint64s (see FPGA doc).
         """
         #print(orders)
@@ -77,7 +78,7 @@ class CIR7_driver():
     
     def update_DAC(self, values):
         """
-        Updates one or several DAC output(s) to the indicated value(s).
+        Update one or several DAC output(s) to the indicated value(s).
         values is a dict of type {DAC_key1:val1, DAC_key2:val2}.
         Direct jump to value for CIR7.
         """
@@ -98,8 +99,8 @@ class CIR7_driver():
         
     def read_current_values(self):
         """
-        Asks the FPGA for the last values sent to each DAC output.
-        Returns a dict of type {DAC_key1:val1, DAC_key2:val2} and the content of the CIR7 memory.
+        Ask the FPGA for the last values sent to each DAC output.
+        Return a dict of type {DAC_key1:val1, DAC_key2:val2} and the content of the CIR7 memory.
         """
         self.FPGA.acknowledge_irqs([3])
         self.send_orders([build_order([(3, 8), (0, 56)])])
@@ -149,9 +150,9 @@ class CIR7_driver():
         orders += [build_order([(2, 8), (2, 8), (0, 24), (address, 8), (Nbytes, 16)])] # write order
         self.send_orders(orders)
 
-    def dump_all(self):
+    def SPI_dump_all(self):
         """
-        Prints whole SPI content.
+        Print whole SPI content.
         """
         print("Reg00 to Reg63", self.SPI_read(0x00, 64))
         print("Min&Max addresses of loop counter", self.SPI_read(0x40, 2))
@@ -161,7 +162,140 @@ class CIR7_driver():
         print("Modes and soft-reset", self.SPI_read(0xFE, 2))
         print("Counter / Register / SRAM indexes", self.SPI_read(0xA0, 3))
         print("Selected", self.SPI_read(0x90, 8))
+
+    def set_mode(self, mode='addr', **kwargs):
+        """
+        Set CIR7's addressing mode.
+        Authorized uses : 
+            set_mode('addr')
+            set_mode('counter')
+            set_mode('lmt_counter', start=0, stop=63)
+            set_mode('register', values=[0, 1, 2])
+            set_mode('sram', values=[0, 1, 2])
+            set_mode('direct')
+        """
+        if mode == 'addr':
+            SPI_code = 0x00
+            counter_control = False
+
+        elif mode == 'counter':
+            SPI_code = 0x00
+            counter_control = True
+
+        elif mode == 'lmt_counter':
+            if 'start' not in kwargs.keys() or 'stop' not in kwargs.keys():
+                raise KeyError('start/stop parameter not found')
+            else:
+                self.SPI_write(0x40, [kwargs['start'], kwargs['stop']]) # update bounds
+                SPI_code = 0 | (1 << 4)
+                counter_control = True
+
+        elif mode == 'register':
+            if 'values' not in kwargs.keys():
+                raise KeyError('values parameter not found')
+            else:
+                self.SPI_write(0x00, kwargs['values']) # update registers
+                SPI_code = 1 | (1 << 4)
+                counter_control = True
+
+        elif mode == 'sram':
+            if 'values' not in kwargs.keys():
+                raise KeyError('values parameter not found')
+            else:
+                # WIP
+                SPI_code = 2 | (1 << 4)
+                counter_control = True
+
+        elif mode == 'direct':
+            SPI_code = 1 << 5
+            counter_control = False
         
+        else:
+            raise KeyError('Unknown mode')
+        
+        mode_mask = 0b00110011
+        prev_code = SPI_read(0xFE, 1)[0] # read to keep clock part
+        new_code = (SPI_code & mode_mask) | (prev_code & ~mode_mask)
+        self.SPI_write(0xFE, new_code)
+        self.update_DAC({'MODE_ROT':1.8 if counter_control else 0.})
+
+    def set_clk(self, int_clk=False, osc_vco=0., two_cycles=True, add_delay=True):
+        """
+        Set the clock.        
+        """     
+        SPI_code = SPI_read(0xFE, 1)[0] # read to keep mode part
+        SPI_code &= ~0b11001000 # clear clock part
+        SPI_code |= int_clk << 3 | two_cycles << 6 | add_delay << 7 # replace clk part
+        self.SPI_write(0xFE, SPI_code)
+        if int_clk:
+            self.update_DAC({'OSC_VCO':osc_vco})
+
+    def set_output(self, mux_mat=False, line0=None, line1=None, column0=None, column1=None):
+        """
+        Select the lines/column to observe.
+        """
+        SPI_codes = []
+        for i in [line0, line1, column0, column1]:
+            if i is None:
+                SPI_code += [0x00] # off
+            else:
+                SPI_code += [0x80 | i%32] # CEN ON, CC1/2 OFF, ADDRESS 5 LSBits
+        self.SPI_write(0x70, SPI_codes)
+        self.update_DAC({'SEL_MAT':1.8 if mux_mat else 0.})
+
+    def reset(self):
+        """
+        Perform a hard and a soft reset.
+        """
+        # program 10 clocks in fastseq
+        clk_OFF = fs.Panel4(addr=0, clk=False, even_value=0., odd_value=0.)
+        clk_ON = fs.Panel4(addr=0, clk=True, even_value=0., odd_value=0.)
+        reset_seq = [clk_OFF, clk_ON]*10
+        self.config_seq(slots={i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
+        
+        # hard reset
+        self.update_DAC({'RESETN':0.})
+        time.sleep(0.1)
+        self.update_DAC({'RESETN':1.8})
+
+        # soft reset
+        self.SPI_write(0xFF, 0)
+        time.sleep(0.1)
+        self.start_seq()
+        time.sleep(0.1)
+        self.SPI_write(0xFF, 1)
+
+    def SPI_sram_write(self, addr, data, sel_mem='both'):
+        """
+        Write one or several byte(s) into the SRAM memories.
+        sel_mem is 'ctl', 'obs' or 'both'.
+        """
+        if len(data) == 0:
+            data = [data]
+        sram_ctrl = {'both':0x00, 'ctl':0x02, 'obs':0x01}[sel_mem] # WEN LOW, CSN LOW to activate
+        for d in data:
+            # SRAM address, data, ctrl
+            self.SPI_write(0x50, [addr, d, sram_ctrl])
+        self.SPI_write(0x52, 0x07)
+
+    def SPI_sram_read(self, addr, Nbytes, sel_mem='both'):
+        """
+        Read one or several byte(s) from the SRAM memories.
+        sel_mem is 'ctl', 'obs' or 'both'.
+        """
+        sram_ctrl = {'both':0x04, 'ctl':0x06, 'obs':0x05}[sel_mem] # WEN HIGH, CSN LOW/HIGH
+        self.SPI_write(0x52, sram_ctrl) # set ctrl
+        ctl_content = []
+        obs_content = []
+        for i in range(Nbytes):
+            self.SPI_write(0x50, addr + i) # set address
+            r = self.SPI_read(0x60, 2) # read two bytes
+            ctl_content.append(r[0])
+            obs_content.append(r[1])
+        self.SPI_write(0x52, 0x07) # reset ctrl
+        return ctl_content, obs_content
+
+
 ######################################
 ###     PANEL4 AUTO-REFRESH
 ######################################
@@ -203,6 +337,7 @@ class CIR7_driver():
         """
         stop_order = build_order([(4, 8), (2, 8), (0, 48)])
         self.send_orders([stop_order])
+        
         
 ######################################
 ###     FAST-SEQUENCE
