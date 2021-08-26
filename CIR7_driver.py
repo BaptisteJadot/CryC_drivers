@@ -12,7 +12,7 @@ from FPGA_utils import build_order, uint16_to_float, float_to_uint16
 import Fastseq_elmts as fs
 import time
 
-class CIR7_driver():
+class CIR7Driver():
     """
     Main driver for CIR7 circuit v2.0
     """
@@ -136,6 +136,14 @@ class CIR7_driver():
         elif [d >> 8 for d in SPI_content.data] != list(range(address, address + Nbytes)): # check addresses
             raise RuntimeError('SPI content was incorrect')
         return [d % 256 for d in SPI_content.data] # remove address flag, only return data
+    
+    def SPI_empty_buffer(self):
+        """
+        Return the content of the SPI output fifo.
+        """
+        SPI_content = self.SPI_data.read(0, timeout_ms=10) # first read to get number of elements
+        SPI_content = self.SPI_data.read(SPI_content.elements_remaining, timeout_ms=2000) # read from memory content
+        return [(d >> 8, d % 256) for d in SPI_content.data] # list of (addr, data)
         
     def SPI_write(self, address, data):
         """
