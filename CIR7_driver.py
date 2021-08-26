@@ -50,9 +50,9 @@ class CIR7Driver():
             self.FPGA.CIR7_values = self.FPGA.registers['CIR7 values']
             self.FPGA.DAC_values = self.FPGA.registers['DAC values']
             # SPI data fifo
-            self.FPGA.SPI_data = self.FPGA.fifos['SPI data']
-            self.FPGA.SPI_data.configure(512) # configure depth
-            self.FPGA.SPI_data.start()
+            self.FPGA.SPI_fifo = self.FPGA.fifos['SPI data']
+            self.FPGA.SPI_fifo.configure(512) # configure depth
+            self.FPGA.SPI_fifo.start()
             
             # configure communication speed
             config_orders = []
@@ -130,7 +130,7 @@ class CIR7Driver():
         """
         read_order = build_order([(2, 8), (3, 8), (0, 24), (address, 8), (Nbytes, 16)])
         self.send_orders([read_order]) # read Nbytes from SPI
-        SPI_content = self.SPI_data.read(Nbytes, timeout_ms=2000) # read from memory content
+        SPI_content = self.FPGA.SPI_fifo.read(Nbytes, timeout_ms=2000) # read from memory content
         if SPI_content.elements_remaining > 0:
             raise RuntimeError('Found extra elements in SPI fifo')
         elif [d >> 8 for d in SPI_content.data] != list(range(address, address + Nbytes)): # check addresses
@@ -141,15 +141,17 @@ class CIR7Driver():
         """
         Return the content of the SPI output fifo.
         """
-        SPI_content = self.SPI_data.read(0, timeout_ms=10) # first read to get number of elements
-        SPI_content = self.SPI_data.read(SPI_content.elements_remaining, timeout_ms=2000) # read from memory content
+        SPI_content = self.FPGA.SPI_fifo.read(0, timeout_ms=10) # first read to get number of elements
+        SPI_content = self.FPGA.SPI_fifo.read(SPI_content.elements_remaining, timeout_ms=2000) # read from memory content
         return [(d >> 8, d % 256) for d in SPI_content.data] # list of (addr, data)
         
     def SPI_write(self, address, data):
         """
         Write one or several byte(s) of data to the SPI.
         """
-        if len(data) == 0:
+        try:
+            iter(data)
+        except TypeError:
             data = [data]
         Nbytes = len(data)
         orders = []
@@ -222,7 +224,7 @@ class CIR7Driver():
             raise KeyError('Unknown mode')
         
         mode_mask = 0b00110011
-        prev_code = SPI_read(0xFE, 1)[0] # read to keep clock part
+        prev_code = self.SPI_read(0xFE, 1)[0] # read to keep clock part
         new_code = (SPI_code & mode_mask) | (prev_code & ~mode_mask)
         self.SPI_write(0xFE, new_code)
         self.update_DAC({'MODE_ROT':1.8 if counter_control else 0.})
@@ -231,7 +233,7 @@ class CIR7Driver():
         """
         Set the clock.        
         """     
-        SPI_code = SPI_read(0xFE, 1)[0] # read to keep mode part
+        SPI_code = self.SPI_read(0xFE, 1)[0] # read to keep mode part
         SPI_code &= ~0b11001000 # clear clock part
         SPI_code |= int_clk << 3 | two_cycles << 6 | add_delay << 7 # replace clk part
         self.SPI_write(0xFE, SPI_code)
@@ -245,9 +247,9 @@ class CIR7Driver():
         SPI_codes = []
         for i in [line0, line1, column0, column1]:
             if i is None:
-                SPI_code += [0x00] # off
+                SPI_codes += [0x00] # off
             else:
-                SPI_code += [0x80 | i%32] # CEN ON, CC1/2 OFF, ADDRESS 5 LSBits
+                SPI_codes += [0x80 | i%32] # CEN ON, CC1/2 OFF, ADDRESS 5 LSBits
         self.SPI_write(0x70, SPI_codes)
         self.update_DAC({'SEL_MAT':1.8 if mux_mat else 0.})
 
@@ -256,9 +258,9 @@ class CIR7Driver():
         Perform a hard and a soft reset.
         """
         # program 10 clocks in fastseq
-        clk_OFF = fs.Panel4(addr=0, clk=False, even_value=0., odd_value=0.)
-        clk_ON = fs.Panel4(addr=0, clk=True, even_value=0., odd_value=0.)
-        reset_seq = [clk_OFF, clk_ON]*10
+        clk_OFF = fs.Panel4(addr=0, clk=True, even_value=0., odd_value=0.)
+        clk_ON = fs.Panel4(addr=0, clk=False, even_value=0., odd_value=0.)
+        reset_seq = [clk_OFF, clk_ON]*10 + [fs.End()]
         self.config_seq(slots={i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
         
         # hard reset
@@ -278,7 +280,9 @@ class CIR7Driver():
         Write one or several byte(s) into the SRAM memories.
         sel_mem is 'ctl', 'obs' or 'both'.
         """
-        if len(data) == 0:
+        try:
+            iter(data)
+        except TypeError:
             data = [data]
         sram_ctrl = {'both':0x00, 'ctl':0x02, 'obs':0x01}[sel_mem] # WEN LOW, CSN LOW to activate
         for d in data:
@@ -357,7 +361,7 @@ class CIR7Driver():
         slots is a dict of type {num:Slot_object}. (missing slots are not updated, use End slots to erase a previous sequence)
         """
         stop_order = build_order([(5, 8), (1, 8), (0, 48)])
-        trig_reset_code = s = sum([b << i for (i, b) in enumerate(trig_reset_states)])
+        trig_reset_code = sum([b << i for (i, b) in enumerate(trig_reset_states)])
         trig_reset_order = build_order([(5, 8), (10, 8), (0, 38), (trig_reset_code, 10)])
         us_DAC_order = build_order([(5, 8), (8, 8), (0, 16), (us_per_DAC, 32)])
         orders = [stop_order, trig_reset_order, us_DAC_order]
@@ -367,7 +371,7 @@ class CIR7Driver():
                 raise KeyError('Unknown slot id')
             else:
                 orders += [build_order([(5, 8), (4, 8), (i, 8), (slot.gen_order(), 40)])]
-                print('{}:{:10X}'.format(i, slot.gen_order()))
+                # print('{}:{:010X}'.format(i, slot.gen_order()))
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
             orders.append(start_order)
@@ -434,7 +438,7 @@ if __name__=="__main__":
     bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main.lvbitx"""
     ip_address = "192.168.1.21"
     
-    instr = CIR7_driver(ip_address, bitfile_path, DAC_dict={})
+    instr = CIR7Driver(ip_address, bitfile_path, DAC_dict={})
     print(instr.read_current_values())
     
     ans1 = instr.SPI_read(0x70, 4)

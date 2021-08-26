@@ -6,7 +6,6 @@ Created on Tue Aug 24 17:22:26 2021
 """
 
 import numpy as np
-import sys,os
 from FPGA_utils import build_order, uint16_to_float, float_to_uint16
 
 #--------------------------------------------------------------------------------
@@ -25,12 +24,12 @@ class Panel4():
         self.odd_value = odd_value
 
     def gen_order(self):
-        if self.addr % 8 > 0:
+        if self.addr & 8 > 0:
             raise ValueError('Addr[3] must be 0V.')
         else:
             even_code = float_to_uint16(self.even_value)
             odd_code = float_to_uint16(self.odd_value)
-            return build_order([(1 if self.clk else 0, 2), (addr, 6), (even_code, 16), (odd_code, 16)])
+            return build_order([(1 if self.clk else 0, 2), (self.addr, 6), (even_code, 16), (odd_code, 16)])
 
     def __str__(self):
         return f'Addr {self.addr}, clk {self.clk}, even {self.even_value}V, odd {self.odd_value}V'
@@ -136,7 +135,7 @@ class SPIRead():
         return build_order([(0x85, 8), (0, 8), (self.address, 8), (self.Nbytes, 16)])
 
     def __str__(self):
-        if Nbytes == 1:
+        if self.Nbytes == 1:
             return 'Read SPI addr {:02x}'.format(self.address)
         else:
             return 'Read SPI addr {:02x} to {}'.format(self.address, self.address + self.Nbytes)

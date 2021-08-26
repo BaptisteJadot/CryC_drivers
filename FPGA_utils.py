@@ -3,7 +3,6 @@
 Created on Mon Dec 14 09:17:20 2020
 @author: Baptiste
 """
-import os
 
 def build_order(tup):
     """
