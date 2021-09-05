@@ -130,6 +130,7 @@ class CIR7Driver():
         """
         read_order = build_order([(2, 8), (3, 8), (0, 24), (address, 8), (Nbytes, 16)])
         self.send_orders([read_order]) # read Nbytes from SPI
+        # print(f'Reading {Nbytes} bytes from {address:02X}')
         SPI_content = self.FPGA.SPI_fifo.read(Nbytes, timeout_ms=2000) # read from memory content
         if SPI_content.elements_remaining > 0:
             raise RuntimeError('Found extra elements in SPI fifo')
@@ -158,6 +159,7 @@ class CIR7Driver():
         for (i, di) in enumerate(data):
             orders += [build_order([(2, 8), (1, 8), (0, 32), (address + i, 8), (di, 8)])] # place in memory
         orders += [build_order([(2, 8), (2, 8), (0, 24), (address, 8), (Nbytes, 16)])] # write order
+        # print(f'Writing {[hex(d) for d in data]} to {address:02X}')
         self.send_orders(orders)
 
     def SPI_dump_all(self):
@@ -285,10 +287,11 @@ class CIR7Driver():
         except TypeError:
             data = [data]
         sram_ctrl = {'both':0x00, 'ctl':0x02, 'obs':0x01}[sel_mem] # WEN LOW, CSN LOW to activate
-        for d in data:
+        self.SPI_write(0x52, [0x07])
+        for i, d in enumerate(data):
             # SRAM address, data, ctrl
-            self.SPI_write(0x50, [addr, d, sram_ctrl])
-        self.SPI_write(0x52, 0x07)
+            self.SPI_write(0x50, [addr+i, d, sram_ctrl])
+            self.SPI_write(0x52, [0x07])
 
     def SPI_sram_read(self, addr, Nbytes, sel_mem='both'):
         """
@@ -377,37 +380,47 @@ class CIR7Driver():
             orders.append(start_order)
         self.send_orders(orders)
 
-    def update_slots(self, slots, start_after=False, start_index=0):
+    def update_slots(self, slots, stop_before=True, start_after=False, start_index=0):
         """
         Modifies several slots in the sequence.
         slots is a dict of type {num:Slot_object}
+        stop_before indicates whether to stop the sequence or not before the modification.
         start_after indicates whether to run the sequence or not after the modification.
         e.g. update_slots({5:Wait(1.0, '10us'), 7:End()})
         """
-        stop_order = build_order([(5, 8), (1, 8), (0, 48)])
-        orders = [stop_order]
+        orders = []
+        if stop_before:
+            stop_order = build_order([(5, 8), (1, 8), (0, 48)])
+            orders = [stop_order]
+            
         for (i, slot) in slots.items():
             if i not in range(0, 1023):
                 raise KeyError('Unknown slot id')
             else:
                 orders += [build_order([(5, 8), (4, 8), (i, 8), (slot.gen_order(), 40)])]
+                
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
             orders.append(start_order)
+            
         self.send_orders(orders)
 
-    def update_slots_lowlevel(self, seq_orders, start_after=False, start_index=0):
+    def update_slots_lowlevel(self, seq_orders, stop_before=True, start_after=False, start_index=0):
         """
         Modifies several slots in the sequence.
         seq_orders is a list of uint64s.
+        stop_before indicates whether to stop the sequence or not before the modification.
         start_after indicates whether to run the sequence or not after the modification.
         """
-        stop_order = build_order([(5, 8), (1, 8), (0, 48)])
+        orders = []
+        if stop_before:
+            stop_order = build_order([(5, 8), (1, 8), (0, 48)])
+            orders = [stop_order]
+        orders += seq_orders                
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
-            self.send_orders([stop_order, *seq_orders, start_order])
-        else:
-            self.send_orders([stop_order, *seq_orders])
+            orders += [start_order]
+        self.send_orders(orders)
 
     def start_seq(self, start_ind=0):
         """
@@ -439,7 +452,7 @@ if __name__=="__main__":
     ip_address = "192.168.1.21"
     
     instr = CIR7Driver(ip_address, bitfile_path, DAC_dict={})
-    print(instr.read_current_values())
+    # print(instr.read_current_values())
     
     ans1 = instr.SPI_read(0x70, 4)
     print('First SPI read : ')
