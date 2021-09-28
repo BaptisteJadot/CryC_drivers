@@ -53,10 +53,14 @@ class CIR7Driver():
             self.FPGA.SPI_fifo = self.FPGA.fifos['SPI data']
             self.FPGA.SPI_fifo.configure(512) # configure depth
             self.FPGA.SPI_fifo.start()
+            # ADC data fifo
+            self.FPGA.ADC_fifo = self.FPGA.fifos['ADC data']
+            self.FPGA.ADC_fifo.configure(1023) # configure depth
+            self.FPGA.ADC_fifo.start()
             
             # configure communication speed
             config_orders = []
-            config_orders += [build_order([(2, 8), (4, 8), (0, 16), (1600, 32)])] # SPI speed
+            config_orders += [build_order([(2, 8), (4, 8), (0, 16), (800, 32)])] # SPI speed
             self.send_orders(config_orders)
     
     def send_orders(self, orders):
@@ -162,18 +166,21 @@ class CIR7Driver():
         # print(f'Writing {[hex(d) for d in data]} to {address:02X}')
         self.send_orders(orders)
 
-    def SPI_dump_all(self):
+    def SPI_dump_all(self, output_to_console=True):
         """
         Print whole SPI content.
         """
-        print("Reg00 to Reg63", self.SPI_read(0x00, 64))
-        print("Min&Max addresses of loop counter", self.SPI_read(0x40, 2))
-        print("SRAM address, data & ctrl", self.SPI_read(0x50, 3))
-        print("Output buffers configuration", self.SPI_read(0x70, 4))
-        print("BIST clear", self.SPI_read(0x80, 1))
-        print("Modes and soft-reset", self.SPI_read(0xFE, 2))
-        print("Counter / Register / SRAM indexes", self.SPI_read(0xA0, 3))
-        print("Selected", self.SPI_read(0x90, 8))
+        out_str = f'Reg00 to Reg63, {self.SPI_read(0x00, 64)}\n'
+        out_str += f'Min&Max addresses of loop counter, {self.SPI_read(0x40, 2)}\n'
+        out_str += f'SRAM address, data & ctrl, {self.SPI_read(0x50, 3)}\n'
+        out_str += f'Output buffers configuration, {self.SPI_read(0x70, 4)}\n'
+        out_str += f'BIST clear, {self.SPI_read(0x80, 1)}\n'
+        out_str += f'Modes and soft-reset, {self.SPI_read(0xFE, 2)}\n'
+        out_str += f'Counter / Register / SRAM indexes, {self.SPI_read(0xA0, 3)}\n'
+        out_str += f'Selected, {self.SPI_read(0x90, 8)}'
+        if output_to_console:
+            print(out_str)
+        return out_str
 
     def set_mode(self, mode='addr', **kwargs):
         """
@@ -239,8 +246,7 @@ class CIR7Driver():
         SPI_code &= ~0b11001000 # clear clock part
         SPI_code |= int_clk << 3 | two_cycles << 6 | add_delay << 7 # replace clk part
         self.SPI_write(0xFE, SPI_code)
-        if int_clk:
-            self.update_DAC({'OSC_VCO':osc_vco})
+        self.update_DAC({'OSC_VCO':osc_vco})
 
     def set_output(self, mux_mat=False, line0=None, line1=None, column0=None, column1=None):
         """
@@ -260,22 +266,38 @@ class CIR7Driver():
         Perform a hard and a soft reset.
         """
         # program 10 clocks in fastseq
-        clk_OFF = fs.Panel4(addr=0, clk=True, even_value=0., odd_value=0.)
-        clk_ON = fs.Panel4(addr=0, clk=False, even_value=0., odd_value=0.)
-        reset_seq = [clk_OFF, clk_ON]*10 + [fs.End()]
-        self.config_seq(slots={i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
+        clk_OFF = fs.Trig_out(address=0, clk=True)
+        wait = fs.Wait(value=1, precision='1us')
+        clk_ON = fs.Trig_out(address=0, clk=False)
+        reset_seq = [clk_OFF, wait, clk_ON, wait]*10 + [fs.End()]
+        self.config_seq(slots={4055+i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
         
-        # hard reset
+        # hard reset   
         self.update_DAC({'RESETN':0.})
         time.sleep(0.1)
         self.update_DAC({'RESETN':1.8})
 
-        # soft reset
+        # soft reset with EXT CLK
+        # self.SPI_write(0xFF, 0) 
+        # time.sleep(0.1)
+        # self.start_seq(start_ind=4055)
+        # time.sleep(0.1)
+        # self.SPI_write(0xFF, 1)
+        # time.sleep(0.1)
+        # self.start_seq(start_ind=4055)
+        # time.sleep(0.1)
+        # self.stop_seq()
+        
+        # soft reset with INT CLK
         self.SPI_write(0xFF, 0)
+        self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
         time.sleep(0.1)
-        self.start_seq()
-        time.sleep(0.1)
+        self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
         self.SPI_write(0xFF, 1)
+        self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
+        time.sleep(0.1)
+        self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
+        self.set_clk(int_clk=False, osc_vco=0.) # 0MHz
 
     def SPI_sram_write(self, addr, data, sel_mem='both'):
         """
@@ -315,43 +337,43 @@ class CIR7Driver():
 ###     PANEL4 AUTO-REFRESH
 ######################################
 
-    def panel4_config(self, start_ind=0, stop_ind=63, ticks_per_address=800, ticks_per_bit=10):
-        """
-        Configures the refresh rate & communication speed of panel 4.
-        """
-        if ticks_per_bit * 39 * 2 > ticks_per_address:
-            raise ValueError('Refresh rate is too low')
-        orders = [build_order([(4, 8), (3, 8), (0, 8), (0, 8), (ticks_per_bit, 32)])]
-        orders += [build_order([(4, 8), (3, 8), (0, 8), (1, 8), (ticks_per_address, 32)])]
-        orders += [build_order([(4, 8), (5, 8), (0, 32), (stop_ind, 8), (start_ind, 8)])]
-        orders += [build_order([(4, 8), (2, 8), (0, 48)])] # start if not already running
-        self.send_orders(orders)
+    # def panel4_config(self, start_ind=0, stop_ind=63, ticks_per_address=800, ticks_per_bit=10):
+    #     """
+    #     Configures the refresh rate & communication speed of panel 4.
+    #     """
+    #     if ticks_per_bit * 39 * 2 > ticks_per_address:
+    #         raise ValueError('Refresh rate is too low')
+    #     orders = [build_order([(4, 8), (3, 8), (0, 8), (0, 8), (ticks_per_bit, 32)])]
+    #     orders += [build_order([(4, 8), (3, 8), (0, 8), (1, 8), (ticks_per_address, 32)])]
+    #     orders += [build_order([(4, 8), (5, 8), (0, 32), (stop_ind, 8), (start_ind, 8)])]
+    #     orders += [build_order([(4, 8), (2, 8), (0, 48)])] # start if not already running
+    #     self.send_orders(orders)
         
-    def panel4_set_value(self, values_dict):
-        """
-        Updates one or several programmed value(s) in CIR7.
-        """
-        orders = []
-        for key, val in values_dict.items():
-            if not isinstance(key, int) or key not in range(64):
-                raise KeyError('Panel 4 key must be an integer from 0 to 63')
-            else:
-                orders += [build_order([(4, 8), (4, 8), (0, 24), (key, 8), (float_to_uint16(val), 16)])]
-        self.send_orders(orders)
+    # def panel4_set_value(self, values_dict):
+    #     """
+    #     Updates one or several programmed value(s) in CIR7.
+    #     """
+    #     orders = []
+    #     for key, val in values_dict.items():
+    #         if not isinstance(key, int) or key not in range(64):
+    #             raise KeyError('Panel 4 key must be an integer from 0 to 63')
+    #         else:
+    #             orders += [build_order([(4, 8), (4, 8), (0, 24), (key, 8), (float_to_uint16(val), 16)])]
+    #     self.send_orders(orders)
         
-    def panel4_stop(self):
-        """
-        Stops panel 4 refreshing
-        """
-        stop_order = build_order([(4, 8), (1, 8), (0, 48)])
-        self.send_orders([stop_order])
+    # def panel4_stop(self):
+    #     """
+    #     Stops panel 4 refreshing
+    #     """
+    #     stop_order = build_order([(4, 8), (1, 8), (0, 48)])
+    #     self.send_orders([stop_order])
         
-    def panel4_start(self):
-        """
-        Starts panel 4 refreshing
-        """
-        stop_order = build_order([(4, 8), (2, 8), (0, 48)])
-        self.send_orders([stop_order])
+    # def panel4_start(self):
+    #     """
+    #     Starts panel 4 refreshing
+    #     """
+    #     stop_order = build_order([(4, 8), (2, 8), (0, 48)])
+    #     self.send_orders([stop_order])
         
         
 ######################################
@@ -367,16 +389,17 @@ class CIR7Driver():
         trig_reset_code = sum([b << i for (i, b) in enumerate(trig_reset_states)])
         trig_reset_order = build_order([(5, 8), (10, 8), (0, 38), (trig_reset_code, 10)])
         us_DAC_order = build_order([(5, 8), (8, 8), (0, 16), (us_per_DAC, 32)])
-        orders = [stop_order, trig_reset_order, us_DAC_order]
+        us_per_SPI_order = build_order([(5, 8), (7, 8), (0, 16), (150, 32)])
+        orders = [stop_order, trig_reset_order, us_DAC_order, us_per_SPI_order]
         # slots
         for (i, slot) in slots.items():
-            if i not in range(0, 1023):
-                raise KeyError('Unknown slot id')
+            if i not in range(0, 4096):
+                raise KeyError('Slot id is not valid')
             else:
-                orders += [build_order([(5, 8), (4, 8), (i, 8), (slot.gen_order(), 40)])]
+                orders += [build_order([(5, 8), (4, 8), (i, 12), (slot.gen_order(), 36)])]
                 # print('{}:{:010X}'.format(i, slot.gen_order()))
         if start_after:
-            start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
+            start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
             orders.append(start_order)
         self.send_orders(orders)
 
@@ -394,13 +417,13 @@ class CIR7Driver():
             orders = [stop_order]
             
         for (i, slot) in slots.items():
-            if i not in range(0, 1023):
+            if i not in range(0, 4096):
                 raise KeyError('Unknown slot id')
             else:
-                orders += [build_order([(5, 8), (4, 8), (i, 8), (slot.gen_order(), 40)])]
+                orders += [build_order([(5, 8), (4, 8), (i, 12), (slot.gen_order(), 36)])]
                 
         if start_after:
-            start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
+            start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
             orders.append(start_order)
             
         self.send_orders(orders)
@@ -418,7 +441,7 @@ class CIR7Driver():
             orders = [stop_order]
         orders += seq_orders                
         if start_after:
-            start_order = build_order([(5, 8), (2, 8), (0, 38), (start_index, 10)])
+            start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
             orders += [start_order]
         self.send_orders(orders)
 
@@ -426,7 +449,7 @@ class CIR7Driver():
         """
         Runs the programmed sequence from the indicated row.
         """
-        self.send_orders([build_order([(5, 8), (2, 8), (0, 38), (start_ind, 10)])])
+        self.send_orders([build_order([(5, 8), (2, 8), (0, 36), (start_ind, 12)])])
 
     def stop_seq(self):
         """
@@ -445,6 +468,16 @@ class CIR7Driver():
             orders = []
         orders.append(build_order([(5, 8), (3, 8), (0, 48)])) # sequence restart
         self.send_orders(orders)
+
+    def get_ADC_data(self, Npts=None, timeout_ms=2000):
+        """
+        Reads Npts (all if None) from ADC output buffer.
+        """
+        if Npts is None:
+            ADC_content = self.FPGA.ADC_fifo.read(0, timeout_ms=timeout_ms) # empty read to get data size
+            Npts = ADC_content.elements_remaining
+        ADC_content = self.FPGA.ADC_fifo.read(Npts, timeout_ms=timeout_ms) # read Npts
+        return ADC_content.data
         
 if __name__=="__main__":
     

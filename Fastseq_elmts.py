@@ -14,25 +14,19 @@ from FPGA_utils import build_order, uint16_to_float, float_to_uint16
 class Panel4():
     """
     Sequence slot updating modified DAC panel (parallel addressing).
-    addr and clk are converted to 0V or 1.8V.
     even/odd values are [-5V ; +5V] floats.
     """
-    def __init__(self, addr = 0, clk = True, even_value = 0., odd_value = 0.):
-        self.addr = addr
-        self.clk = clk
+    def __init__(self, even_value = 0., odd_value = 0.):
         self.even_value = even_value
         self.odd_value = odd_value
 
     def gen_order(self):
-        if self.addr & 8 > 0:
-            raise ValueError('Addr[3] must be 0V.')
-        else:
-            even_code = float_to_uint16(self.even_value)
-            odd_code = float_to_uint16(self.odd_value)
-            return build_order([(1 if self.clk else 0, 2), (self.addr, 6), (even_code, 16), (odd_code, 16)])
+        even_code = float_to_uint16(self.even_value)
+        odd_code = float_to_uint16(self.odd_value)
+        return build_order([(0x0, 4), (even_code, 16), (odd_code, 16)])
 
     def __str__(self):
-        return f'Addr {self.addr}, clk {self.clk}, even {self.even_value}V, odd {self.odd_value}V'
+        return f'Even input {self.even_value:.5f}V, odd input {self.odd_value:.5f}V'
 
 class End():
     """
@@ -42,7 +36,7 @@ class End():
         pass
 
     def gen_order(self):
-        return build_order([(0x80, 8), (0, 32)])
+        return build_order([(0xF, 8), (0, 32)])
 
     def __str__(self):
         return 'End'
@@ -50,7 +44,7 @@ class End():
 class Wait():
     """
     Sequence slot waiting the indicated duration (in us).
-    precision is either '1us', '10us', '100us' or '1ms'.
+    precision is either '1us', '10us', '100us', '1ms' or 'ticks'.
     if value > (2**16 - 1) * precision, the precision is increased.
     """
     def __init__(self, value, precision = '1us'):
@@ -58,51 +52,53 @@ class Wait():
         self.precision = precision
 
     def gen_order(self):
-        if self.precision not in ['1us', '10us', '100us', '1ms']:
+        if self.precision not in ['ticks', '1us', '10us', '100us', '1ms']:
             raise ValueError('Time precision not understood')
         else:
-            s = ['1us', '10us', '100us', '1ms'].index(self.precision)
-            if self.value > (2**16-1) * 10**s:
-                s = int(np.ceil(np.log10(self.value / (2**16-1))))
+            multipliers = {'ticks':1/80., '1us':1., '10us':10., '100us':100., '1ms':1000.}
+            if self.value > 0xFFFF * multipliers[self.precision]: # increase precision
+                s = int(np.ceil(np.log10(self.value / 0xFFFF))) # lowest power of 10
                 if s>3:
                     raise ValueError('Value is too large')
                 else:
                     self.precision = ['1us', '10us', '100us', '1ms'][s]
-            val = int(np.round(self.value / 10**s))
-            return build_order([(0x81, 8), (0, 14), (s, 2), (val, 16)])
+            val = int(np.round(self.value / multipliers[self.precision]))
+            s = ['ticks', '1us', '10us', '100us', '1ms'].index(self.precision)
+            return build_order([(0x1, 4), (0, 13), (s, 3), (val, 16)])
 
     def __str__(self):
         return 'Wait {}us [{}]'.format(self.value, self.precision)
 
 class Trig_out():
     """
-    Sequence slot updating the 10 trigger_out outputs (panel 9).
-    status is a list of 10 booleans, trig n°0 first.
+    Sequence slot updating the 11 trigger_out outputs (addr 0-6, clk, DIO 0-3).
     """
-    def __init__(self, status = [True] * 10):
-        self.status = status
+    def __init__(self, address=0, clk=False, trig=[True]*4):
+        self.address = address
+        self.clk = clk
+        self.trig = trig
 
     def gen_order(self):
-        code = sum([b << i for (i, b) in enumerate(self.status)])
-        return build_order([(0x82, 8), (0, 22), (code, 10)])
+        code = sum([b << i for (i, b) in enumerate(self.trig)])
+        return build_order([(0x2, 4), (0, 21), (code, 4), (self.clk, 1), (self.address, 6)])
 
     def __str__(self):
-        return 'Trig out [' + ','.join(['T' if c else 'F' for c in self.status]) + ']'
+        return f'Addr {self.address}, clk {"T" if self.clk else "F"}, Trig [' + ','.join(['T' if c else 'F' for c in self.trig]) + ']'
         
 class Trig_in():
     """
     Sequence slot waiting for a specific trigger status on panel 8.
     monitor indicates which trigger inputs need to correspond.
-    status and monitor are lists of 10 booleans, trig n°0 first.
+    status and monitor are lists of 4 booleans, trig n°0 first.
     """
-    def __init__(self, status = [True] * 10, monitor = [False] * 10):
+    def __init__(self, status = [True] * 4, monitor = [False] * 4):
         self.status = status
         self.monitor = monitor
 
     def gen_order(self):
         s = sum([b << i for (i, b) in enumerate(self.status)])
         m = sum([b << i for (i, b) in enumerate(self.monitor)])
-        return build_order([(0x83, 8), (0, 12), (m, 10), (s, 10)])
+        return build_order([(0x3, 4), (0, 24), (m, 4), (s, 4)])
 
     def __str__(self):
         return 'Trig in [' + ','.join(['X' if not m else 'T' if v else 'F' for m,v in zip(self.monitor, self.status)]) + ']'
@@ -117,10 +113,10 @@ class JumpFor():
         self.count = count
 
     def gen_order(self):
-        return build_order([(0x84, 8), (0, 12), (self.count, 10), (self.target, 10)])
+        return build_order([(0x4, 4), (0, 8), (self.count, 12), (self.target, 12)])
 
     def __str__(self):
-        return 'Jump to {} x {}'.format(self.target, self.count if self.count == 0 else 'inf')
+        return 'Jump to {} x {}'.format(self.target, self.count if self.count > 0 else 'inf')
 
 class SPIRead():
     """
@@ -132,13 +128,13 @@ class SPIRead():
         self.Nbytes = Nbytes
 
     def gen_order(self):
-        return build_order([(0x85, 8), (0, 8), (self.address, 8), (self.Nbytes, 16)])
+        return build_order([(0x5, 4), (0, 8), (self.address, 8), (self.Nbytes, 16)])
 
     def __str__(self):
         if self.Nbytes == 1:
             return 'Read SPI addr {:02x}'.format(self.address)
         else:
-            return 'Read SPI addr {:02x} to {}'.format(self.address, self.address + self.Nbytes)
+            return 'Read SPI addr {:02x} to {:02x}'.format(self.address, self.address + self.Nbytes)
 
 class SPIWrite():
     """
@@ -149,7 +145,20 @@ class SPIWrite():
         self.data = data
 
     def gen_order(self):
-        return build_order([(0x86, 8), (0, 16), (self.address, 8), (self.data, 8)])
+        return build_order([(0x6, 4), (0, 16), (self.address, 8), (self.data, 8)])
 
     def __str__(self):
         return 'Write {:02x} to SPI at addr {:02x}'.format(self.data, self.address)
+
+class ADC_get():
+    """
+    Sequence slot acquiring the current value for one ADC channel [0-15].
+    """
+    def __init__(self, channel):
+        self.channel = channel
+
+    def gen_order(self):
+        return build_order([(0x7, 4), (0, 28), (self.channel, 4)])
+
+    def __str__(self):
+        return f'Read 1 point from ADC channel {self.channel}'

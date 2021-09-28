@@ -10,8 +10,8 @@ Created on Mon Aug 16 13:15:56 2021
 #############
 DAC_dict = {}
 
-DAC_dict['VE0N'] = {'panel':0, 'channel':1, 'lower_limit':0., 'upper_limit':1.8}
-DAC_dict['VE1N'] = {'panel':0, 'channel':3, 'lower_limit':0., 'upper_limit':1.8}
+# DAC_dict['VE0N'] = {'panel':0, 'channel':1, 'lower_limit':0., 'upper_limit':1.8}
+# DAC_dict['VE1N'] = {'panel':0, 'channel':3, 'lower_limit':0., 'upper_limit':1.8}
 DAC_dict['MODE_ROT'] = {'panel':0, 'channel':4, 'lower_limit':0., 'upper_limit':1.8}
 DAC_dict['SEL_MAT'] = {'panel':0, 'channel':5, 'lower_limit':0., 'upper_limit':1.8}
 DAC_dict['OSC_VCO'] = {'panel':0, 'channel':6, 'lower_limit':0., 'upper_limit':1.8}
@@ -19,8 +19,8 @@ DAC_dict['RESETN'] = {'panel':0, 'channel':7, 'lower_limit':0., 'upper_limit':1.
 
 DAC_dict['VBGPA'] = {'panel':3, 'channel':0, 'lower_limit':-3., 'upper_limit':0.}
 DAC_dict['VBGNA'] = {'panel':3, 'channel':1, 'lower_limit':0., 'upper_limit':3.}
-DAC_dict['VBGNC'] = {'panel':3, 'channel':2, 'lower_limit':0., 'upper_limit':3.}
-DAC_dict['VBGPC'] = {'panel':3, 'channel':3, 'lower_limit':-3., 'upper_limit':0.}
+DAC_dict['VBGNC'] = {'panel':3, 'channel':2, 'lower_limit':-1., 'upper_limit':3.}
+DAC_dict['VBGPC'] = {'panel':3, 'channel':3, 'lower_limit':-3., 'upper_limit':1.}
 DAC_dict['VBGNM'] = {'panel':3, 'channel':4, 'lower_limit':0., 'upper_limit':3.}
 DAC_dict['VBGPM'] = {'panel':3, 'channel':5, 'lower_limit':-3., 'upper_limit':0.}
 

@@ -12,7 +12,7 @@ import numpy as np
 import time
 
 def update_perm(seq, addr, new_val):
-    ind = [(2 * addr + k) % 128 + 1 for k in range(4)]
+    ind = [(2 * addr + k) % 128 + 1 for k in [0,2]]
     new_slots = {}
     for i in ind:
         if addr % 2 == 0: 
@@ -33,21 +33,19 @@ print(instr.FPGA.fpga_vi_state)
 
 ## DACS
 DAC_val = {}
-DAC_val['VE0N'] = 0
-DAC_val['VE1N'] = 0.
 # DAC_val['MODE_ROT'] = 0. # auto-set by following functions
 # DAC_val['SEL_MAT'] = 1.8
 # DAC_val['OSC_VCO'] = 0.
 # DAC_val['RESETN'] = 1.8
 
 DAC_val['VBGPA'] = 0.
-DAC_val['VBGNA'] = 0.
+DAC_val['VBGNA'] = 2.
 DAC_val['VBGNC'] = 0.
 DAC_val['VBGPC'] = 0.
 DAC_val['VBGNM'] = 0.
 DAC_val['VBGPM'] = 0.
 
-DAC_val['CMD_R0'] = 1.8
+DAC_val['CMD_R0'] = 0.
 DAC_val['CMD_R1'] = 0.
 DAC_val['CMD_R2'] = 0.
 DAC_val['CMD_R3'] = 0.
@@ -64,43 +62,52 @@ instr.set_mode('lmt_counter', start=0, stop=63)
 # instr.set_mode('sram', values=list(range(64))))
 # instr.set_mode('direct')
 
-instr.set_clk(int_clk=True, osc_vco=1.5, two_cycles=False, add_delay=True)
+instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=False)
 
-ind = 14
-v = [1.]*64
-v[ind] = 1.5
+ind = 0
+v = [0.]*64
+v[0] = 1.
 
-instr.set_output(mux_mat=False, line0=None, line1=None, column0=None, column1=None)
+# v = np.linspace(0.4,1.2,64)
+# v[0] = 1.5
+# v[1::2] = 1.
+
+instr.set_output(mux_mat=True, line0=ind//2, line1=ind//2, column0=None, column1=None)
 
 ## FAST SEQUENCE
-seq = [fs.Trig_out(status=[False] * 4 + [True] * 6)]
+seq = [fs.Trig_out(address=0, clk=False, trig=[False]*4)]
 for i in range(32):
-    seq += [fs.Panel4(addr=32, clk=False, even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
-    seq += [fs.Panel4(addr=32, clk=True, even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
-    seq += [fs.Panel4(addr=32, clk=False, even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
-    seq += [fs.Panel4(addr=32, clk=True, even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
+    seq += [fs.Trig_out(address=(2*i)%64, clk=False, trig=[False]*4)]
+    seq += [fs.Panel4(even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
+    seq += [fs.Trig_out(address=(2*i)%64, clk=True, trig=[False]*4)]
+    seq += [fs.Panel4(even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
+    seq += [fs.Trig_out(address=(2*i+1)%64, clk=False, trig=[False]*4)]
+    seq += [fs.Panel4(even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
+    seq += [fs.Trig_out(address=(2*i+1)%64, clk=True, trig=[False]*4)]
+    seq += [fs.Panel4(even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
 # seq += [fs.Wait(value=1, precision='1us')]
 seq += [fs.JumpFor(target=1, count=0)] # play infinitely
 seq += [fs.End()]
 
 instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
-                    us_per_DAC=10, 
+                    us_per_DAC=100, 
                     trig_reset_states=[True]*10, 
                     start_after=False, 
                     start_index=0)
 
 ## READ CURRENT STATE
 instr.stop_seq()
-# i0 = instr.SPI_read(0xA0, 1)[0]
-# print(i0)
-# print((i0*2+1),seq[2*i0+1])
-# instr.start_seq(start_ind=(i0*2)+1)
-# time.sleep(0.2)
+i0 = instr.SPI_read(0xA0, 1)[0]
+print(i0)
+print(((i0+1)%4)*4+1,seq[((i0+1)%4)*4+1])
+instr.start_seq(start_ind=((i0+1)%4)*4+1)
+time.sleep(2)
 
-# for i in range(4,64,2):
-#     update_perm(seq, i-2, 1.)
-#     update_perm(seq, i, 1.5)
-#     time.sleep(0.5)
+# for i in range(2,64,2):
+#     if i>2:
+#         update_perm(seq, i-2, 0.)
+#     update_perm(seq, i, 0.5)
+#     time.sleep(0.2)
 
 ## SRAM
 # code = instr.SPI_read(0xFE, 1)[0]
@@ -118,6 +125,6 @@ instr.stop_seq()
 # print(ans[1])
 
 # CLOSE INSTRUMENT
-# instr.stop_seq()
+instr.stop_seq()
 instr.FPGA.close()
 
