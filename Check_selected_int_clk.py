@@ -13,7 +13,7 @@ import numpy as np
 import time
     
 ## OPEN INSTRUMENT
-bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main.lvbitx"""
+bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main_analog_addr.lvbitx"""
 ip_address = "192.168.1.21"
 instr = CIR7Driver(ip_address, bitfile_path, DAC_dict)
 print(instr.FPGA.fpga_vi_state)
@@ -49,29 +49,31 @@ instr.update_DAC(DAC_val)
 # instr.set_mode('addr')
 # instr.set_mode('counter')
 # instr.set_mode('lmt_counter', start=0, stop=63)
-# instr.set_mode('register', values=list(range(64)))
+instr.set_mode('register', values=list(range(64)))
 # instr.set_mode('register', values=[0x20]*64)
 # instr.set_mode('sram', values=list(range(64)))
-instr.set_mode('direct')
+# instr.set_mode('direct')
 # 
 
 instr.set_output(mux_mat=False, line0=None,  line1=None, column0=None, column1=None)
 
+code = instr.SPI_read(0xFE, 1)[0]
+
 instr.set_clk(int_clk=True, osc_vco=0., two_cycles=False, add_delay=False)
 
-# code = instr.SPI_read(0xFE, 1)[0]
+code = instr.SPI_read(0xFE, 1)[0]
 # instr.SPI_write(0xFE, code & ~0x04)
 # instr.SPI_write(0xFE, code | 0x04)
 
 _ = instr.SPI_dump_all(True)
 
 ## FAST SEQUENCE
-addr = 5
+addr = 55
 if addr & 8 > 0:
     print('Invalid address')
     addr = 0
 seq = []
-seq += [fs.Trig_out(address=addr, clk=True, trig=[True]*4)]
+seq += [fs.Panel4(address=addr, clk=False, even_value = 0., odd_value = 0.)]
 seq += [fs.End()]
 instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
                     us_per_DAC=100, 

@@ -59,8 +59,10 @@ class CIR7Driver():
             self.FPGA.ADC_fifo.start()
             
             # configure communication speed
+            SPI_ticks_per_bit = 800
             config_orders = []
-            config_orders += [build_order([(2, 8), (4, 8), (0, 16), (800, 32)])] # SPI speed
+            config_orders += [build_order([(2, 8), (4, 8), (0, 16), (SPI_ticks_per_bit, 32)])] # SPI speed
+            config_orders += [build_order([(5, 8), (7, 8), (0, 16), (int(np.ceil(SPI_ticks_per_bit*16/80)), 32)])] # us per SPI byte in fastseq
             self.send_orders(config_orders)
     
     def send_orders(self, orders):
@@ -238,7 +240,7 @@ class CIR7Driver():
         self.SPI_write(0xFE, new_code)
         self.update_DAC({'MODE_ROT':1.8 if counter_control else 0.})
 
-    def set_clk(self, int_clk=False, osc_vco=0., two_cycles=True, add_delay=True):
+    def set_clk(self, int_clk=False, osc_vco=0., two_cycles=False, add_delay=False):
         """
         Set the clock.        
         """     
@@ -264,40 +266,40 @@ class CIR7Driver():
     def reset(self):
         """
         Perform a hard and a soft reset.
-        """
-        # program 10 clocks in fastseq
-        clk_OFF = fs.Trig_out(address=0, clk=True)
-        wait = fs.Wait(value=1, precision='1us')
-        clk_ON = fs.Trig_out(address=0, clk=False)
-        reset_seq = [clk_OFF, wait, clk_ON, wait]*10 + [fs.End()]
-        self.config_seq(slots={4055+i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
-        
+        """        
         # hard reset   
         self.update_DAC({'RESETN':0.})
         time.sleep(0.1)
         self.update_DAC({'RESETN':1.8})
 
         # soft reset with EXT CLK
-        # self.SPI_write(0xFF, 0) 
-        # time.sleep(0.1)
-        # self.start_seq(start_ind=4055)
-        # time.sleep(0.1)
-        # self.SPI_write(0xFF, 1)
-        # time.sleep(0.1)
-        # self.start_seq(start_ind=4055)
-        # time.sleep(0.1)
-        # self.stop_seq()
+        # program 10 clocks in fastseq
+        clk_OFF = fs.Panel4(address=0, clk=False)
+        wait = fs.Wait(value=1, precision='1us')
+        clk_ON = fs.Trig_out(address=0, clk=True)
+        reset_seq = [clk_OFF, wait, clk_ON, wait]*10 + [fs.End()]
+        self.config_seq(slots={4055+i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
+        self.SPI_write(0xFF, 0) 
+        time.sleep(0.1)
+        self.start_seq(start_ind=4055)
+        time.sleep(0.1)
+        self.SPI_write(0xFF, 1)
+        time.sleep(0.1)
+        self.start_seq(start_ind=4055)
+        time.sleep(0.1)
+        self.stop_seq()
         
         # soft reset with INT CLK
-        self.SPI_write(0xFF, 0)
-        self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
-        time.sleep(0.1)
-        self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
-        self.SPI_write(0xFF, 1)
-        self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
-        time.sleep(0.1)
-        self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
-        self.set_clk(int_clk=False, osc_vco=0.) # 0MHz
+        # self.stop_seq()
+        # self.SPI_write(0xFF, 0)
+        # self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
+        # time.sleep(0.1)
+        # self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
+        # self.SPI_write(0xFF, 1)
+        # self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
+        # time.sleep(0.1)
+        # self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
+        # self.set_clk(int_clk=False, osc_vco=0.) # 0MHz
 
     def SPI_sram_write(self, addr, data, sel_mem='both'):
         """
@@ -389,14 +391,14 @@ class CIR7Driver():
         trig_reset_code = sum([b << i for (i, b) in enumerate(trig_reset_states)])
         trig_reset_order = build_order([(5, 8), (10, 8), (0, 38), (trig_reset_code, 10)])
         us_DAC_order = build_order([(5, 8), (8, 8), (0, 16), (us_per_DAC, 32)])
-        us_per_SPI_order = build_order([(5, 8), (7, 8), (0, 16), (150, 32)])
-        orders = [stop_order, trig_reset_order, us_DAC_order, us_per_SPI_order]
+        # us_per_SPI_order = build_order([(5, 8), (7, 8), (0, 16), (150, 32)])
+        orders = [stop_order, trig_reset_order, us_DAC_order]
         # slots
         for (i, slot) in slots.items():
             if i not in range(0, 4096):
                 raise KeyError('Slot id is not valid')
             else:
-                orders += [build_order([(5, 8), (4, 8), (i, 12), (slot.gen_order(), 36)])]
+                orders += [build_order([(5, 8), (0x8, 4), (i, 12), (slot.gen_order(), 40)])]
                 # print('{}:{:010X}'.format(i, slot.gen_order()))
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
@@ -420,7 +422,7 @@ class CIR7Driver():
             if i not in range(0, 4096):
                 raise KeyError('Unknown slot id')
             else:
-                orders += [build_order([(5, 8), (4, 8), (i, 12), (slot.gen_order(), 36)])]
+                orders += [build_order([(5, 8), (0x8, 8), (i, 12), (slot.gen_order(), 36)])]
                 
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])

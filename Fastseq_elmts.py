@@ -16,17 +16,19 @@ class Panel4():
     Sequence slot updating modified DAC panel (parallel addressing).
     even/odd values are [-5V ; +5V] floats.
     """
-    def __init__(self, even_value = 0., odd_value = 0.):
+    def __init__(self, address=0, clk=False, even_value = 0., odd_value = 0.):
         self.even_value = even_value
         self.odd_value = odd_value
+        self.address = address
+        self.clk = clk
 
     def gen_order(self):
         even_code = float_to_uint16(self.even_value)
         odd_code = float_to_uint16(self.odd_value)
-        return build_order([(0x0, 4), (even_code, 16), (odd_code, 16)])
+        return build_order([(1 if self.clk else 0, 2), (self.address, 6), (even_code, 16), (odd_code, 16)])
 
     def __str__(self):
-        return f'Even input {self.even_value:.5f}V, odd input {self.odd_value:.5f}V'
+        return f'Addr {self.address}, clk {"T" if self.clk else "F"}, Even input {self.even_value:.5f}V, odd input {self.odd_value:.5f}V'
 
 class End():
     """
@@ -36,7 +38,7 @@ class End():
         pass
 
     def gen_order(self):
-        return build_order([(0xF, 8), (0, 32)])
+        return build_order([(0x8F, 8), (0, 32)])
 
     def __str__(self):
         return 'End'
@@ -64,7 +66,7 @@ class Wait():
                     self.precision = ['1us', '10us', '100us', '1ms'][s]
             val = int(np.round(self.value / multipliers[self.precision]))
             s = ['ticks', '1us', '10us', '100us', '1ms'].index(self.precision)
-            return build_order([(0x1, 4), (0, 13), (s, 3), (val, 16)])
+            return build_order([(0x81, 8), (0, 13), (s, 3), (val, 16)])
 
     def __str__(self):
         return 'Wait {}us [{}]'.format(self.value, self.precision)
@@ -80,7 +82,7 @@ class Trig_out():
 
     def gen_order(self):
         code = sum([b << i for (i, b) in enumerate(self.trig)])
-        return build_order([(0x2, 4), (0, 21), (code, 4), (self.clk, 1), (self.address, 6)])
+        return build_order([(0x82, 8), (0, 21), (code, 4), (self.clk, 1), (self.address, 6)])
 
     def __str__(self):
         return f'Addr {self.address}, clk {"T" if self.clk else "F"}, Trig [' + ','.join(['T' if c else 'F' for c in self.trig]) + ']'
@@ -98,7 +100,7 @@ class Trig_in():
     def gen_order(self):
         s = sum([b << i for (i, b) in enumerate(self.status)])
         m = sum([b << i for (i, b) in enumerate(self.monitor)])
-        return build_order([(0x3, 4), (0, 24), (m, 4), (s, 4)])
+        return build_order([(0x83, 8), (0, 24), (m, 4), (s, 4)])
 
     def __str__(self):
         return 'Trig in [' + ','.join(['X' if not m else 'T' if v else 'F' for m,v in zip(self.monitor, self.status)]) + ']'
@@ -113,7 +115,7 @@ class JumpFor():
         self.count = count
 
     def gen_order(self):
-        return build_order([(0x4, 4), (0, 8), (self.count, 12), (self.target, 12)])
+        return build_order([(0x84, 4), (0, 8), (self.count, 12), (self.target, 12)])
 
     def __str__(self):
         return 'Jump to {} x {}'.format(self.target, self.count if self.count > 0 else 'inf')
@@ -128,7 +130,7 @@ class SPIRead():
         self.Nbytes = Nbytes
 
     def gen_order(self):
-        return build_order([(0x5, 4), (0, 8), (self.address, 8), (self.Nbytes, 16)])
+        return build_order([(0x85, 4), (0, 8), (self.address, 8), (self.Nbytes, 16)])
 
     def __str__(self):
         if self.Nbytes == 1:
@@ -145,7 +147,7 @@ class SPIWrite():
         self.data = data
 
     def gen_order(self):
-        return build_order([(0x6, 4), (0, 16), (self.address, 8), (self.data, 8)])
+        return build_order([(0x86, 4), (0, 16), (self.address, 8), (self.data, 8)])
 
     def __str__(self):
         return 'Write {:02x} to SPI at addr {:02x}'.format(self.data, self.address)
@@ -158,7 +160,7 @@ class ADC_get():
         self.channel = channel
 
     def gen_order(self):
-        return build_order([(0x7, 4), (0, 28), (self.channel, 4)])
+        return build_order([(0x87, 4), (0, 28), (self.channel, 4)])
 
     def __str__(self):
         return f'Read 1 point from ADC channel {self.channel}'
