@@ -46,26 +46,25 @@ DAC_val['CMD_R6'] = 0.
 instr.update_DAC(DAC_val)
 
 ## SPI
-addr = 0b110110
+addr = 0b010111
+# addr = 32
 if addr & 8 > 0:
     print('Invalid address')
     addr = 0
 # instr.set_mode('addr')
 # instr.set_mode('counter')
-# instr.set_mode('lmt_counter', start=0, stop=63)
-instr.set_mode('register', values=list(range(64)))
+instr.set_mode('lmt_counter', start=0, stop=63)
+# instr.set_mode('register', values=list(range(64)))
 # instr.set_mode('register', values=[addr]*64)
-# instr.set_mode('sram', values=list(range(64)))
+# instr.set_mode('sram', values=[addr]*64)
 # instr.set_mode('direct')
 # 
 
 instr.set_output(mux_mat=False, line0=None,  line1=None, column0=None, column1=None)
 
-code = instr.SPI_read(0xFE, 1)[0]
+instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=False)
 
-instr.set_clk(int_clk=True, osc_vco=0., two_cycles=False, add_delay=False)
-
-code = instr.SPI_read(0xFE, 1)[0]
+# code = instr.SPI_read(0xFE, 1)[0]
 # instr.SPI_write(0xFE, code & ~0x04)
 # instr.SPI_write(0xFE, code | 0x04)
 
@@ -73,13 +72,44 @@ _ = instr.SPI_dump_all(True)
 
 ## FAST SEQUENCE
 seq = []
+# seq += [fs.Trig_out(trig=[False]*4)]
 seq += [fs.Panel4(address=addr, clk=False, even_value = 0., odd_value = 0.)]
+seq += [fs.Panel4(address=addr, clk=True, even_value = 0., odd_value = 0.)]
+seq += [fs.JumpFor(target=addr, count=1)] # 2 addresses
+seq += [fs.Panel4(address=0, clk=False, even_value = 0., odd_value = 0.)]
+# seq += [fs.Panel4(address=addr, clk=True, even_value = 0., odd_value = 0.)]
+# seq += [fs.Trig_out(trig=[True]*4)]
+# seq += [fs.SPIRead(address=0xA0, Nbytes=3)]
+# seq += [fs.SPIRead(address=0x90, Nbytes=8)]
+# # seq += [fs.Wait(value=15000, precision='1us')]
+# seq += [fs.JumpFor(target=0, count=20)] # 20 times
 seq += [fs.End()]
 instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
                     us_per_DAC=100, 
                     trig_reset_states=[True]*10, 
-                    start_after=True, 
+                    start_after=False, 
                     start_index=0)
+
+# ## READ CURRENT STATE
+# SPI_output = []
+# start = time.time()
+# while len(SPI_output) < 11*20 and time.time()-start < 2:
+#     SPI_output += instr.SPI_empty_buffer()
+#     time.sleep(0.1)
+
+# str_out = 'A0, A1, A2, selected\n'
+# str_out += '-' * 42 + '\n'
+# for k in range(20):
+#     if [addr for (addr, val) in SPI_output[:11]] != [0xA0, 0xA1, 0xA2] + list(range(0x90, 0x98)):
+#         print ('Error parsing answer')
+#     else:
+#         for (_, data) in SPI_output[:3]:
+#             str_out += f'{data:02X}' + ', '
+#         sel = []
+#         for (addr, data) in SPI_output[3:11]:
+#             sel += [(addr-0x90)*8+j for j in range(8) if (data>>j)&1==1]
+#         str_out += '[' + ', '.join([f'{s:02X}' for s in sel]) + ']\n'
+# print(str_out)
 
 ## READ CURRENT STATE
 str_out = 'A0, A1, A2, selected\n'
@@ -95,23 +125,11 @@ for k in range(20):
         sel += [i*8+j for j in range(8) if (data>>j)&1==1]
     str_out += '[' + ', '.join([f'{s:02X}' for s in sel]) + ']\n'
     # run clk for a while
-    instr.update_DAC({'OSC_VCO':0.46}) # 100kHz
-    instr.update_DAC({'OSC_VCO':0.}) # disable
+    instr.start_seq(start_ind=0)
+    time.sleep(0.1)
+    instr.stop_seq()
 print(str_out)
 
-# ## READ CURRENT STATE
-# str_out = 'A0, A1, A2, 90, 91, 92, 93, 94, 95, 96, 97\n'
-# str_out += '-' * 42 + '\n'
-# for k in range(20):
-#     # read current indexes
-#     SPI_output = instr.SPI_read(0xA0, 3)
-#     SPI_output += instr.SPI_read(0x90, 8)
-#     for i, data in enumerate(SPI_output):
-#         str_out += f'{data:02X}' + ('\n' if i == 10 else ', ')
-#     # run clk for a while
-#     instr.update_DAC({'OSC_VCO':0.46}) # 100kHz
-#     instr.update_DAC({'OSC_VCO':0.}) # disable
-# print(str_out)
 
 ## SRAM
 # code = instr.SPI_read(0xFE, 1)[0]

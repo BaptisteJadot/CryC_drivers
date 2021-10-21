@@ -31,7 +31,7 @@ def test_SPI(instr, speed_ticks):
     return Nerr
     
 ## OPEN INSTRUMENT
-bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main.lvbitx"""
+bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main_analog_addr.lvbitx"""
 ip_address = "192.168.1.21"
 instr = CIR7Driver(ip_address, bitfile_path, DAC_dict)
 # print(instr.FPGA.fpga_vi_state)

@@ -115,7 +115,7 @@ class JumpFor():
         self.count = count
 
     def gen_order(self):
-        return build_order([(0x84, 4), (0, 8), (self.count, 12), (self.target, 12)])
+        return build_order([(0x84, 8), (0, 8), (self.count, 12), (self.target, 12)])
 
     def __str__(self):
         return 'Jump to {} x {}'.format(self.target, self.count if self.count > 0 else 'inf')
@@ -130,7 +130,7 @@ class SPIRead():
         self.Nbytes = Nbytes
 
     def gen_order(self):
-        return build_order([(0x85, 4), (0, 8), (self.address, 8), (self.Nbytes, 16)])
+        return build_order([(0x85, 8), (0, 8), (self.address, 8), (self.Nbytes, 16)])
 
     def __str__(self):
         if self.Nbytes == 1:
@@ -147,7 +147,7 @@ class SPIWrite():
         self.data = data
 
     def gen_order(self):
-        return build_order([(0x86, 4), (0, 16), (self.address, 8), (self.data, 8)])
+        return build_order([(0x86, 8), (0, 16), (self.address, 8), (self.data, 8)])
 
     def __str__(self):
         return 'Write {:02x} to SPI at addr {:02x}'.format(self.data, self.address)
@@ -160,7 +160,7 @@ class ADC_get():
         self.channel = channel
 
     def gen_order(self):
-        return build_order([(0x87, 4), (0, 28), (self.channel, 4)])
+        return build_order([(0x87, 8), (0, 28), (self.channel, 4)])
 
     def __str__(self):
         return f'Read 1 point from ADC channel {self.channel}'

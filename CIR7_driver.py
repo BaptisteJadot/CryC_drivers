@@ -59,7 +59,7 @@ class CIR7Driver():
             self.FPGA.ADC_fifo.start()
             
             # configure communication speed
-            SPI_ticks_per_bit = 800
+            SPI_ticks_per_bit = 4000
             config_orders = []
             config_orders += [build_order([(2, 8), (4, 8), (0, 16), (SPI_ticks_per_bit, 32)])] # SPI speed
             config_orders += [build_order([(5, 8), (7, 8), (0, 16), (int(np.ceil(SPI_ticks_per_bit*16/80)), 32)])] # us per SPI byte in fastseq
@@ -238,6 +238,8 @@ class CIR7Driver():
         prev_code = self.SPI_read(0xFE, 1)[0] # read to keep clock part
         new_code = (SPI_code & mode_mask) | (prev_code & ~mode_mask)
         self.SPI_write(0xFE, new_code)
+        if not counter_control:
+            raise RuntimeError('Cannot use address mode')
         self.update_DAC({'MODE_ROT':1.8 if counter_control else 0.})
 
     def set_clk(self, int_clk=False, osc_vco=0., two_cycles=False, add_delay=False):
@@ -250,7 +252,7 @@ class CIR7Driver():
         self.SPI_write(0xFE, SPI_code)
         self.update_DAC({'OSC_VCO':osc_vco})
 
-    def set_output(self, mux_mat=False, line0=None, line1=None, column0=None, column1=None):
+    def set_output(self, mux_mat=False, line0=None, line1=None, column0=None, column1=None, CC_code=0):
         """
         Select the lines/column to observe.
         """
@@ -259,7 +261,7 @@ class CIR7Driver():
             if i is None:
                 SPI_codes += [0x00] # off
             else:
-                SPI_codes += [0x80 | i%32] # CEN ON, CC1/2 OFF, ADDRESS 5 LSBits
+                SPI_codes += [0x80 | i%32 | (CC_code<<4)] # CEN ON, CC1/2 OFF, ADDRESS 5 LSBits
         self.SPI_write(0x70, SPI_codes)
         self.update_DAC({'SEL_MAT':1.8 if mux_mat else 0.})
 
@@ -268,37 +270,44 @@ class CIR7Driver():
         Perform a hard and a soft reset.
         """        
         # hard reset   
+        self.update_DAC({'OSC_VCO':0.46}) # 100MHz
         self.update_DAC({'RESETN':0.})
         time.sleep(0.1)
         self.update_DAC({'RESETN':1.8})
-
-        # soft reset with EXT CLK
-        # program 10 clocks in fastseq
-        clk_OFF = fs.Panel4(address=0, clk=False)
-        wait = fs.Wait(value=1, precision='1us')
-        clk_ON = fs.Trig_out(address=0, clk=True)
-        reset_seq = [clk_OFF, wait, clk_ON, wait]*10 + [fs.End()]
-        self.config_seq(slots={4055+i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
+        time.sleep(0.1)
+        self.update_DAC({'OSC_VCO':0.}) # disable
+        
+        ## soft reset with EXT CLK
+        # # program 10 clocks in fastseq
+        reset_seq = []
+        # reset_seq += [fs.Trig_out(trig=[False]*4)]
+        reset_seq += [fs.Panel4(address=0, clk=False)]
+        reset_seq += [fs.Panel4(address=0, clk=True)]
+        reset_seq += [fs.JumpFor(target=0, count=10)]
+        reset_seq += [fs.End()]
+        self.config_seq(slots={i:s for i,s in enumerate(reset_seq)}, us_per_DAC=10) # 50kHz clock
         self.SPI_write(0xFF, 0) 
         time.sleep(0.1)
-        self.start_seq(start_ind=4055)
+        self.start_seq(start_ind=0)
         time.sleep(0.1)
         self.SPI_write(0xFF, 1)
         time.sleep(0.1)
-        self.start_seq(start_ind=4055)
+        self.start_seq(start_ind=0)
         time.sleep(0.1)
         self.stop_seq()
         
-        # soft reset with INT CLK
+        ## soft reset with INT CLK
         # self.stop_seq()
+        # self.update_DAC({'OSC_VCO':0.}) # disable
         # self.SPI_write(0xFF, 0)
-        # self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
+        # self.set_clk(int_clk=True, osc_vco=0.)
+        # self.update_DAC({'OSC_VCO':0.46}) # 100MHz
         # time.sleep(0.1)
-        # self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
+        # self.update_DAC({'OSC_VCO':0.}) # disable
         # self.SPI_write(0xFF, 1)
-        # self.set_clk(int_clk=True, osc_vco=0.54) # 100MHz
+        # self.update_DAC({'OSC_VCO':0.46}) # 100MHz
         # time.sleep(0.1)
-        # self.set_clk(int_clk=True, osc_vco=0.) # 0MHz
+        # self.update_DAC({'OSC_VCO':0.}) # disable
         # self.set_clk(int_clk=False, osc_vco=0.) # 0MHz
 
     def SPI_sram_write(self, addr, data, sel_mem='both'):
@@ -403,6 +412,7 @@ class CIR7Driver():
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
             orders.append(start_order)
+        # print(orders)
         self.send_orders(orders)
 
     def update_slots(self, slots, stop_before=True, start_after=False, start_index=0):
@@ -422,7 +432,7 @@ class CIR7Driver():
             if i not in range(0, 4096):
                 raise KeyError('Unknown slot id')
             else:
-                orders += [build_order([(5, 8), (0x8, 8), (i, 12), (slot.gen_order(), 36)])]
+                orders += [build_order([(5, 8), (0x8, 4), (i, 12), (slot.gen_order(), 40)])]
                 
         if start_after:
             start_order = build_order([(5, 8), (2, 8), (0, 36), (start_index, 12)])
@@ -482,17 +492,40 @@ class CIR7Driver():
         return ADC_content.data
         
 if __name__=="__main__":
+    from CIR7_config import DAC_dict
     
-    bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main.lvbitx"""
+    bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main_analog_addr.lvbitx"""
     ip_address = "192.168.1.21"
     
-    instr = CIR7Driver(ip_address, bitfile_path, DAC_dict={})
-    # print(instr.read_current_values())
+    instr = CIR7Driver(ip_address, bitfile_path, DAC_dict)
+    print(instr.read_current_values()[0])
+    
+    # seq = []
+    # seq += [fs.Trig_out(trig=[False]*4)]
+    # seq += [fs.Panel4(address=0, clk=False)]
+    # seq += [fs.Panel4(address=0, clk=True)]
+    # seq += [fs.JumpFor(target=0, count=10)]
+    # seq += [fs.End()]
+    # # seq = [fs.End()]*4096
+    
+    # for i, s in enumerate(seq):
+    #     print(f"{i}: {s}")
+    # instr.config_seq({i:s for i,s in enumerate(seq)}, us_per_DAC=10, start_after=True)
+    
+    instr.reset()
     
     ans1 = instr.SPI_read(0x70, 4)
     print('First SPI read : ')
     for (i, val) in enumerate(ans1):
         print(f"{0x70+i:02x}\t{val:02x}")
+        
+    ans3 = instr.SPI_read(0x00, 64)
+    print('Registers : ')
+    for (i, val) in enumerate(ans3):
+        print(f"{i:02x}\t{val:02x}")
+        
+    ans4 = instr.SPI_read(0xFE, 2)
+    print(f"Mode {ans4[0]:02x}\tReset {ans4[1]:02x}")
     
     instr.SPI_write(0x70, [0x81, 0x82, 0x03, 0x84])
     print('Writing to SPI ...')
@@ -501,6 +534,11 @@ if __name__=="__main__":
     print('Second SPI read : ')
     for (i, val) in enumerate(ans1):
         print(f"{0x70+i:02x}\t{val:02x}")
+        
+    ans4 = instr.SPI_read(0xFE, 2)
+    print(f"Mode {ans4[0]:02x}\tReset {ans4[1]:02x}")
+        
+    _ = instr.SPI_dump_all()
     
     instr.FPGA.close()
     

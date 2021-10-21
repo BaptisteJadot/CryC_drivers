@@ -29,8 +29,8 @@ DAC_val = {}
 # DAC_val['OSC_VCO'] = 0.
 # DAC_val['RESETN'] = 1.8
 
-DAC_val['VBGPA'] = -2.
-DAC_val['VBGNA'] = 2.
+DAC_val['VBGPA'] = -0.5
+DAC_val['VBGNA'] = 1.
 DAC_val['VBGNC'] = 0.
 DAC_val['VBGPC'] = 0.
 DAC_val['VBGNM'] = 0.
@@ -99,87 +99,87 @@ SPI_state = instr.SPI_dump_all(output_to_console=True)
 DAC_values, _ = instr.read_current_values()
 fastseq_str = '\n'.join([s.__str__() for s in seq])
 
-## RUN SEQUENCE
-instr.start_seq()
-print('Starting')
+# ## RUN SEQUENCE
+# instr.start_seq()
+# print('Starting')
 
-## READ DATA
-out_data = []
-for i in range(avg):
-    out_data += instr.get_ADC_data(Npts=len(V))
-out_data = np.array(out_data, dtype=np.float)
-# print(out_data)
+# ## READ DATA
+# out_data = []
+# for i in range(avg):
+#     out_data += instr.get_ADC_data(Npts=len(V))
+# out_data = np.array(out_data, dtype=np.float)
+# # print(out_data)
 
-## PLOT
-out_data = out_data.reshape((len(V), avg))
-plt.figure(201) ; plt.ion()
-Vmean = np.mean(out_data[:,2:], axis=1)
-Vstd = np.std(out_data[:,2:], axis=1)
-plt.errorbar(V.T, Vmean, Vstd, fmt='o')
-plt.xlabel('Vin (V)')
-plt.ylabel('Vout (V)')
-# plt.legend(['MUX_mat OFF', 'MUX_mat ON'])
-plt.title('SO<3> (addr 15) vs Vodd')
-plt.grid()
-            
-# ## LOOP
-# init_move_dt = np.dtype({'names':['name','value'],'formats':['S100','f8']})
-# DAC_val_arr = np.array([(key, val) for key, val in DAC_values.items()], dtype=init_move_dt)
-# plt.figure(200) ; plt.clf() ; plt.ion()
-# with h5.File('''D:\Baptiste\CIR7\\4K\Suiveur_carac_CD3_mat2.h5''', 'a') as f:
-#     try:
-#         grp = f['Settings']
-#     except:
-#         grp = f.create_group('Settings')
-#         grp.attrs.create('SPI', SPI_state)
-#         grp.attrs.create('DAC_values', DAC_val_arr, dtype=init_move_dt)
-#         grp.attrs.create('Fastseq', fastseq_str)
-    
-#     k = 0
-#     for VBGN in np.linspace(0,3.,7):
-#         for VBGP in np.linspace(0,-3.,7):
-#             for CC in [0, 1, 2, 3]:
-#                 DAC_val['VBGPA'] = VBGP
-#                 DAC_val['VBGNA'] = VBGN
-#                 instr.update_DAC(DAC_val)
-                
-#                 instr.set_output(mux_mat=mux_mat, line0=None, line1=None, column0=None, column1=addr//2, CC_code=CC)
-                
-#                 ## RUN SEQUENCE
-#                 instr.start_seq()
-#                 print(VBGN, VBGP, CC)
-                
-#                 ## READ DATA
-#                 out_data = []
-#                 for i in range(avg):
-#                     out_data += instr.get_ADC_data(Npts=len(V))
-#                 out_data = np.array(out_data, dtype=np.float)
-#                 # print(out_data)
-                
-#                 ## PLOT
-#                 out_data = out_data.reshape((len(V), avg))
-#                 Vmean = np.mean(out_data[:,2:], axis=1)
-#                 Vstd = np.std(out_data[:,2:], axis=1)
-#                 plt.errorbar(V.T, Vmean, Vstd, fmt='o')
-                    
-#                 grp = f.create_group(f'data_{k}')
-#                 k += 1
-#                 grp.create_dataset('Vin', data=V)
-#                 grp.create_dataset('Vout', data=out_data)
-#                 grp.attrs.create('VBGPA', VBGP)
-#                 grp.attrs.create('VBGNA', VBGN)
-#                 grp.attrs.create('CC_code', CC)
-#                 grp.attrs.create('address', addr)
-#                 grp.attrs.create('mux_mat', mux_mat)
-#                 grp.attrs.create('Ipol', 100e-6)
-                
-#     f.close()
-
+# ## PLOT
+# out_data = out_data.reshape((len(V), avg))
+# plt.figure(200) ; plt.ion()
+# Vmean = np.mean(out_data[:,2:], axis=1)
+# Vstd = np.std(out_data[:,2:], axis=1)
+# plt.errorbar(V.T, Vmean, Vstd, fmt='o')
 # plt.xlabel('Vin (V)')
 # plt.ylabel('Vout (V)')
 # # plt.legend(['MUX_mat OFF', 'MUX_mat ON'])
 # plt.title('SO<3> (addr 15) vs Vodd')
 # plt.grid()
+            
+## LOOP
+init_move_dt = np.dtype({'names':['name','value'],'formats':['S100','f8']})
+DAC_val_arr = np.array([(key, val) for key, val in DAC_values.items()], dtype=init_move_dt)
+plt.figure(200) ; plt.clf() ; plt.ion()
+with h5.File('''D:\Baptiste\CIR7\\4K\Suiveur_carac_CD3_mat2.h5''', 'a') as f:
+    try:
+        grp = f['Settings']
+    except:
+        grp = f.create_group('Settings')
+        grp.attrs.create('SPI', SPI_state)
+        grp.attrs.create('DAC_values', DAC_val_arr, dtype=init_move_dt)
+        grp.attrs.create('Fastseq', fastseq_str)
+    
+    k = 0
+    for VBGN in np.linspace(0,3.,7):
+        for VBGP in np.linspace(0,-3.,7):
+            for CC in [0, 1, 2, 3]:
+                DAC_val['VBGPA'] = VBGP
+                DAC_val['VBGNA'] = VBGN
+                instr.update_DAC(DAC_val)
+                
+                instr.set_output(mux_mat=mux_mat, line0=None, line1=None, column0=None, column1=addr//2, CC_code=CC)
+                
+                ## RUN SEQUENCE
+                instr.start_seq()
+                print(VBGN, VBGP, CC)
+                
+                ## READ DATA
+                out_data = []
+                for i in range(avg):
+                    out_data += instr.get_ADC_data(Npts=len(V))
+                out_data = np.array(out_data, dtype=np.float)
+                # print(out_data)
+                
+                ## PLOT
+                out_data = out_data.reshape((len(V), avg))
+                Vmean = np.mean(out_data[:,2:], axis=1)
+                Vstd = np.std(out_data[:,2:], axis=1)
+                plt.errorbar(V.T, Vmean, Vstd, fmt='o')
+                    
+                grp = f.create_group(f'data_{k}')
+                k += 1
+                grp.create_dataset('Vin', data=V)
+                grp.create_dataset('Vout', data=out_data)
+                grp.attrs.create('VBGPA', VBGP)
+                grp.attrs.create('VBGNA', VBGN)
+                grp.attrs.create('CC_code', CC)
+                grp.attrs.create('address', addr)
+                grp.attrs.create('mux_mat', mux_mat)
+                grp.attrs.create('Ipol', 100e-6)
+                
+    f.close()
+
+plt.xlabel('Vin (V)')
+plt.ylabel('Vout (V)')
+# plt.legend(['MUX_mat OFF', 'MUX_mat ON'])
+plt.title('SO<3> (addr 15) vs Vodd')
+plt.grid()
 
 ## CLOSE INSTRUMENT
 instr.FPGA.close()
