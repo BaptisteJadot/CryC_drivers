@@ -223,7 +223,7 @@ class CIR7Driver():
             if 'values' not in kwargs.keys():
                 raise KeyError('values parameter not found')
             else:
-                # WIP
+                self.SPI_sram_write(0x00, kwargs['values'], sel_mem='both') # update SRAM
                 SPI_code = 2 | (1 << 4)
                 counter_control = True
 
@@ -319,18 +319,51 @@ class CIR7Driver():
             iter(data)
         except TypeError:
             data = [data]
+            
+        # SRAM COMM NEED TRIG
+        seq = []
+        seq += [fs.Panel4(clk=False, even_value=0., odd_value=0.)]
+        seq += [fs.Panel4(clk=True, even_value=0., odd_value=0.)]
+        seq += [fs.JumpFor(target=0, count=0)] # play infinitely
+        seq += [fs.End()]
+        self.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
+                            us_per_DAC=10, 
+                            trig_reset_states=[True]*10, 
+                            start_after=True, 
+                            start_index=0)
+        
+        # SEND SRAM VALUES
         sram_ctrl = {'both':0x00, 'ctl':0x02, 'obs':0x01}[sel_mem] # WEN LOW, CSN LOW to activate
         self.SPI_write(0x52, [0x07])
+        
         for i, d in enumerate(data):
             # SRAM address, data, ctrl
             self.SPI_write(0x50, [addr+i, d, sram_ctrl])
             self.SPI_write(0x52, [0x07])
+            
+        self.SPI_write(0x50, [0x00])
+        # STOP TRIG
+        self.stop_seq()
+        
 
     def SPI_sram_read(self, addr, Nbytes, sel_mem='both'):
         """
         Read one or several byte(s) from the SRAM memories.
         sel_mem is 'ctl', 'obs' or 'both'.
         """
+        # SRAM COMM NEED TRIG
+        seq = []
+        seq += [fs.Panel4(clk=False, even_value=0., odd_value=0.)]
+        seq += [fs.Panel4(clk=True, even_value=0., odd_value=0.)]
+        seq += [fs.JumpFor(target=0, count=0)] # play infinitely
+        seq += [fs.End()]
+        self.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
+                            us_per_DAC=10, 
+                            trig_reset_states=[True]*10, 
+                            start_after=True, 
+                            start_index=0)
+        
+        # RECEIVE SRAM VALUES
         sram_ctrl = {'both':0x04, 'ctl':0x06, 'obs':0x05}[sel_mem] # WEN HIGH, CSN LOW/HIGH
         self.SPI_write(0x52, sram_ctrl) # set ctrl
         ctl_content = []
@@ -341,6 +374,9 @@ class CIR7Driver():
             ctl_content.append(r[0])
             obs_content.append(r[1])
         self.SPI_write(0x52, 0x07) # reset ctrl
+        
+        # STOP TRIG
+        self.stop_seq()
         return ctl_content, obs_content
 
 

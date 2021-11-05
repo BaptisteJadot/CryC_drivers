@@ -1,17 +1,17 @@
 # -*- coding: utf-8 -*-
 """
-Created on Mon Oct 18 09:23:38 2021
+Created on Tue Oct 26 12:46:42 2021
 
-@author: Baptiste
+@author: manip.batm
 """
 
 from CIR7_driver import CIR7Driver
 from CIR7_config import DAC_dict
 import Fastseq_elmts as fs
 import numpy as np
+import matplotlib.pyplot as plt
 import time
-
-   
+  
 ## OPEN INSTRUMENT
 bitfile_path = """C:/Users/manip.batm/Documents/FPGA_Batch_2_0_5_CryoC009/Labview_2019/FPGA Bitfiles/FPGA_CIR7_main_analog_addr.lvbitx"""
 ip_address = "192.168.1.21"
@@ -48,21 +48,21 @@ instr.update_DAC(DAC_val)
 # instr.set_mode('addr')
 # instr.set_mode('counter')
 # instr.set_mode('lmt_counter', start=0, stop=63)
-instr.set_mode('register', values=[14,17]*32)
+instr.set_mode('register', values=list(range(64)))
 # instr.set_mode('sram', values=list(range(64))))
 # instr.set_mode('direct')
 
-instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=True)
-instr.set_output(mux_mat=False, line0=14, line1=None, column0=None, column1=None)
+instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=False)
+instr.set_output(mux_mat=False, line0=14//2, line1=None, column0=None, column1=None)
 
-## INCREMENT CLOCK UNTIL ADDRESS 14
+## INCREMENT CLOCK UNTIL ADDRESS 0
 i0 = instr.SPI_read(0xA1, 1)[0]
 print(i0)
-while i0 != 14:
+while i0 != 0:
     seq = []
-    seq += [fs.Panel4(address=0, clk=False, even_value=0., odd_value=0.)]
-    seq += [fs.Panel4(address=0, clk=True, even_value=0., odd_value=0.)]
-    seq += [fs.Panel4(address=0, clk=False, even_value=0., odd_value=0.)]
+    seq += [fs.Panel4(address=0, clk=False, even_value=0.5, odd_value=0.5)]
+    seq += [fs.Panel4(address=0, clk=True, even_value=0.5, odd_value=0.5)]
+    seq += [fs.Panel4(address=0, clk=False, even_value=0.5, odd_value=0.5)]
     seq += [fs.End()]
     instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
                         us_per_DAC=10, 
@@ -74,32 +74,39 @@ while i0 != 14:
     print(i0)
 SPI_state = instr.SPI_dump_all(output_to_console=True)
 
-## FAST SEQUENCE
+## RUN
+v = [0.5]*64
+# v[13] = 0.
+v[14] = 1.
 seq = []
-seq += [fs.Trig_out(trig=[False]*4)]
+seq += [fs.Trig_out(trig=[True]*4)]
+for i in range(32+32): # write value to all + loop to addr 13
+    seq += [fs.Panel4(clk=False, even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
+    seq += [fs.Panel4(clk=True, even_value=v[(2*i)%64], odd_value=v[(2*i-1)%64])]
+    seq += [fs.Panel4(clk=False, even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
+    seq += [fs.Panel4(clk=True, even_value=v[(2*i)%64], odd_value=v[(2*i+1)%64])]
 
-for i in range(50):
-    seq += [fs.Panel4(clk=False, even_value=0.3, odd_value=0.8)]
-    seq += [fs.Panel4(clk=True, even_value=0.3, odd_value=0.8)] # 14
-    
-    seq += [fs.Panel4(clk=False, even_value=0.3, odd_value=0.6)]
-    seq += [fs.Panel4(clk=True, even_value=0.3, odd_value=0.6)] # 17
-    
-    seq += [fs.Panel4(clk=False, even_value=0.5, odd_value=0.6)]
-    seq += [fs.Panel4(clk=True, even_value=0.5, odd_value=0.6)] # 14
-    
-    seq += [fs.Panel4(clk=False, even_value=0.5, odd_value=0.8)]
-    seq += [fs.Panel4(clk=True, even_value=0.5, odd_value=0.8)] # 17
-    
+seq += [fs.Panel4(clk=False, even_value=0.5, odd_value=0.5)]
+seq += [fs.Panel4(clk=True, even_value=0.5, odd_value=0.5)]
+print((2*i+2)%64)
+seq += [fs.Trig_out(trig=[False]*4)]
+seq += [fs.Panel4(clk=False, even_value=0.8, odd_value=0.5)]
+seq += [fs.Wait(value=15, precision='1us')]
+seq += [fs.Panel4(clk=False, even_value=1.2, odd_value=0.5)]
+seq += [fs.Wait(value=15, precision='1us')]
+seq += [fs.JumpFor(target=len(seq)-4, count=100)] # keep on changing V15
 seq += [fs.End()]
 
 instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
-                    us_per_DAC=5, 
+                    us_per_DAC=10, 
                     trig_reset_states=[True]*10, 
                     start_after=True, 
                     start_index=0)
-
+time.sleep(2)
+    
 # CLOSE INSTRUMENT
 instr.stop_seq()
 instr.FPGA.close()
 
+# CTALK_02 : 14 @ 1V, 15 @ 0.8/1.2V
+# CTALK_03 : 14 @ 1V, 15 @ 0.5V, 16 @ 0.5V, 17 @ 0.8/1.2V

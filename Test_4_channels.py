@@ -55,7 +55,7 @@ instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=False)
 
 v = [0.25, 0.5, 0.75, 1.]
 
-instr.set_output(mux_mat=False, line0=14, line1=17, column0=None, column1=None)
+instr.set_output(mux_mat=False, line0=14//2, line1=17//2, column0=None, column1=None)
 
 ## FAST SEQUENCE
 seq = [fs.Trig_out(trig=[False]*4)]
