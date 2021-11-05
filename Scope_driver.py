@@ -5,9 +5,7 @@ Created on Fri Nov  5 10:36:55 2021
 @author: Baptiste
 """
 
-from numpy.lib.utils import source
 import pyvisa
-import pyvisa.resources
 import time
 import numpy as np
 
@@ -15,11 +13,6 @@ class ScopeDriver():
     """
     Driver for R&S RTA4004. Adapted from Matthieu D.
     """
-
-######################################
-###      OPEN COMMUNICATION
-######################################
-
     def __init__(self, SCOPE_VISA):
         rm = pyvisa.ResourceManager()
         self.instr = rm.open_resource(
