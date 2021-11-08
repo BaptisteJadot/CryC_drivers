@@ -9,6 +9,54 @@ import pyvisa
 import time
 import numpy as np
 
+AWG_SAMPLING_RATE_MHz = 1.
+VEVEN_CHAN = 2
+VODD_CHAN = 3
+CLK_CHAN = 4
+
+def build_waveforms(values=[0.5]*64, clk_rate_MHz=0.05, data_to_clk_us=5., current_index=63, current_val=0.):
+    ## CONVERT DELAYS TO POINTS
+    # clk
+    L0 = int(np.round(AWG_SAMPLING_RATE_MHz / (2 * clk_rate_MHz))) # number of identical points for CLK
+    if L0 < 1:
+        raise ValueError("CLK frequency is too high.")
+    elif L0 * (2 * clk_rate_MHz) != AWG_SAMPLING_RATE_MHz:
+        print(f"CLK frequency rounded to {AWG_SAMPLING_RATE_MHz / (2 * L0)} MHz.")
+
+    # data - clk delay
+    Ldc = int(np.round(data_to_clk_us * AWG_SAMPLING_RATE_MHz))
+    if abs(Ldc) >= 2 * L0:
+        print("DATA to CLK time is greater than 1 CLK period")
+    if Ldc != data_to_clk_us * AWG_SAMPLING_RATE_MHz:
+        print(f"DATA to CLK time rounded to {Ldc / AWG_SAMPLING_RATE_MHz} us.")
+
+    ## BUILD WAVEFORMS
+    # clk
+    CLK = [0., 0.] + [0., 1.8] * len(values) + [0., 0.]
+    CLK = np.tile(CLK, (L0, 1)).flatten("F")
+    # addr_change = (np.where(np.diff(CLK) > 0.)[0] + 1).tolist() # indexes of rising CLK edge
+    
+    # data
+    V0 = np.tile(values[::2], (4*L0, 1)).flatten("F")
+    V0 = np.concatenate((np.array([V0[0]]*(3 * L0 - Ldc)), 
+                         V0, 
+                         np.array([V0[-1]]*(L0 + Ldc)))) # add before and after
+    
+    V1 = np.tile(values[1::2], (4*L0, 1)).flatten("F")
+    V1 = np.concatenate((np.array([current_val]*(5 * L0 - Ldc)), 
+                         V1[:-(2 * L0)], 
+                         np.array([V1[-1]]*(L0 + Ldc)))) # add before and after
+    
+    # correct for i0 parity
+    if current_index % 2 != 0:
+        Veven = np.array(V0)
+        Vodd = np.array(V1)
+    else:
+        Vodd = np.array(V1)
+        Veven = np.array(V0)
+
+    return Veven, Vodd, CLK
+
 class AWGDriver():
     """
     Driver for Tektronik 5014.
