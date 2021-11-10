@@ -9,21 +9,27 @@ import pyvisa
 import time
 import numpy as np
 
-AWG_SAMPLING_RATE_MHz = 1.
-VEVEN_CHAN = 2
-VODD_CHAN = 3
-CLK_CHAN = 4
+AWG_SAMPLING_RATE_MHz = 64.
 
-def build_waveforms(values=[0.5]*64, clk_rate_MHz=0.05, data_to_clk_us=5., current_index=63, current_val=0.):
-    ## CONVERT DELAYS TO POINTS
-    # clk
-    L0 = int(np.round(AWG_SAMPLING_RATE_MHz / (2 * clk_rate_MHz))) # number of identical points for CLK
+def build_clk(Nclk, clk_rate_MHz):
+    # check arguments
+    L0 = int(np.round(AWG_SAMPLING_RATE_MHz / (2 * clk_rate_MHz)))
     if L0 < 1:
         raise ValueError("CLK frequency is too high.")
     elif L0 * (2 * clk_rate_MHz) != AWG_SAMPLING_RATE_MHz:
         print(f"CLK frequency rounded to {AWG_SAMPLING_RATE_MHz / (2 * L0)} MHz.")
-
-    # data - clk delay
+    
+    # build
+    CLK = [0., 0.] + [0., 1.8] * Nclk + [0., 0.]
+    CLK = np.tile(CLK, (L0, 1)).flatten("F")
+    return CLK, L0
+    
+def build_waveforms(values=[0.5]*64, clk_rate_MHz=0.05, data_to_clk_us=5., current_index=63, current_val=0.):
+    ## CLK
+    CLK, L0 = build_clk(len(values), clk_rate_MHz)
+    # addr_change = (np.where(np.diff(CLK) > 0.)[0] + 1).tolist() # indexes of rising CLK edge
+    
+    ## DATA - CLK DELAY
     Ldc = int(np.round(data_to_clk_us * AWG_SAMPLING_RATE_MHz))
     if abs(Ldc) >= 2 * L0:
         print("DATA to CLK time is greater than 1 CLK period")
@@ -31,20 +37,21 @@ def build_waveforms(values=[0.5]*64, clk_rate_MHz=0.05, data_to_clk_us=5., curre
         print(f"DATA to CLK time rounded to {Ldc / AWG_SAMPLING_RATE_MHz} us.")
 
     ## BUILD WAVEFORMS
-    # clk
-    CLK = [0., 0.] + [0., 1.8] * len(values) + [0., 0.]
-    CLK = np.tile(CLK, (L0, 1)).flatten("F")
-    # addr_change = (np.where(np.diff(CLK) > 0.)[0] + 1).tolist() # indexes of rising CLK edge
-    
-    # data
     V0 = np.tile(values[::2], (4*L0, 1)).flatten("F")
-    V0 = np.concatenate((np.array([V0[0]]*(3 * L0 - Ldc)), 
-                         V0, 
-                         np.array([V0[-1]]*(L0 + Ldc)))) # add before and after
-    
     V1 = np.tile(values[1::2], (4*L0, 1)).flatten("F")
-    V1 = np.concatenate((np.array([current_val]*(5 * L0 - Ldc)), 
+    if len(values) % 2 == 0:
+        V0 = np.concatenate((np.array([V0[0]]*(3 * L0 - Ldc)), 
+                         V0,
+                         np.array([V0[-1]]*(L0 + Ldc)))) # add before and after
+        V1 = np.concatenate((np.array([current_val]*(5 * L0 - Ldc)), 
                          V1[:-(2 * L0)], 
+                         np.array([V1[-1]]*(L0 + Ldc)))) # add before and after
+    else:
+        V0 = np.concatenate((np.array([V0[0]]*(3 * L0 - Ldc)), 
+                         V0[:-(2 * L0)],
+                         np.array([V0[-1]]*(L0 + Ldc)))) # add before and after
+        V1 = np.concatenate((np.array([current_val]*(5 * L0 - Ldc)), 
+                         V1, 
                          np.array([V1[-1]]*(L0 + Ldc)))) # add before and after
     
     # correct for i0 parity
@@ -75,7 +82,7 @@ class AWGDriver():
         self.wf_length = None
         self.instr.write("AWGC:RMODE TRIG")
         for c in range(1, 5):
-            self.set_amplitude_and_offset(channel=c, amplitude=2., offset=0)
+            self.set_amplitude_and_offset(channel=c, amplitude=2.5, offset=0)
 
     def close(self):
         self.instr.close()
@@ -88,9 +95,12 @@ class AWGDriver():
 
     def run(self):
         self.instr.write("AWGC:RUN")
+        
+    def force_trig(self):
+        self.instr.write("*TRG")
 
     def set_output(self, channel=1, state="OFF"):
-        self.instr.write(f"SOUR{channel}:OUTP {state}")
+        self.instr.write(f"OUTP{channel} {state}")
     
     def set_all_outputs(self, state="OFF"):
         for k in range(1, 5):
@@ -150,7 +160,6 @@ class AWGDriver():
         wfm_name = f"CH{channel}_wfm"
         self.instr.write(f"WLIST:WAV:DEL \"{wfm_name}\"") # delete waveform if existing
         self.instr.write(f"WLIST:WAV:NEW \"{wfm_name}\", {len(wf_uint16)}, INT") # create empty wf
-        block_data = pyvisa.util.to_ieee_block(wf_uint16, datatype='h')
         self.instr.write_binary_values(f"WLIST:WAV:DATA \"{wfm_name}\", ", wf_uint16, datatype="h") # transfer binary data
         self.instr.write(f"SOUR{channel}:WAV \"{wfm_name}\"") # set waveform as active
 

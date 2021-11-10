@@ -31,6 +31,9 @@ class ScopeDriver():
         ans = self.instr.query("SYST:ERR:ALL?")
         print(ans)
         return ans
+    
+    def wait_opc(self):
+        _ =  self.instr.write("*OPC?")
 
     def close(self):
         self.instr.close()
