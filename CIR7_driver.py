@@ -55,7 +55,7 @@ class CIR7Driver():
             self.FPGA.SPI_fifo.start()
             # ADC data fifo
             self.FPGA.ADC_fifo = self.FPGA.fifos['ADC data']
-            self.FPGA.ADC_fifo.configure(1023) # configure depth
+            self.FPGA.ADC_fifo.configure(10000) # configure depth
             self.FPGA.ADC_fifo.start()
             
             # configure communication speed

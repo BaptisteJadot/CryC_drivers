@@ -29,7 +29,7 @@ instr = CIR7Driver(ip_address, bitfile_path, DAC_dict)
 print(instr.FPGA.fpga_vi_state)
 
 ## RESET CIR7
-# instr.reset()
+instr.reset()
 
 ## DACS
 DAC_val = {}
@@ -38,8 +38,8 @@ DAC_val = {}
 # DAC_val['OSC_VCO'] = 0.
 # DAC_val['RESETN'] = 1.8
 
-DAC_val['VBGPA'] = -2.
-DAC_val['VBGNA'] = 2.
+DAC_val['VBGPA'] = 0.
+DAC_val['VBGNA'] = 0.
 DAC_val['VBGNC'] = 0.
 DAC_val['VBGPC'] = 0.
 DAC_val['VBGNM'] = 0.
@@ -57,24 +57,23 @@ instr.update_DAC(DAC_val)
 ## SPI
 # instr.set_mode('addr')
 # instr.set_mode('counter')
-instr.set_mode('lmt_counter', start=0, stop=63)
-# instr.set_mode('register', values=list(range(64)))
-# instr.set_mode('sram', values=list(range(64))))
+# instr.set_mode('lmt_counter', start=0, stop=63)
+instr.set_mode('register', values=list(range(64)))
+# instr.set_mode('sram', values=list(range(64)))
 # instr.set_mode('direct')
 
 instr.set_clk(int_clk=False, osc_vco=0., two_cycles=False, add_delay=False)
-
 ind = 14
-v = [0.5]*64
-v[14] = 1.
-v[17] = 0.8
+v = [0.]*64
+v[14] = 0.
+v[17] = 0.
 
 # v = np.linspace(0,0.63*2,64)+0.2
 # v[0] = 1.5
 # v[1::2] = 1.
 
-# instr.set_output(mux_mat=False, line0=ind//2, line1=None, column0=None, column1=None)
-instr.set_output(mux_mat=False, line0=14, line1=17, column0=None, column1=None)
+instr.set_output(mux_mat=False, line0=None, line1=None, column0=None, column1=None)
+# instr.set_output(mux_mat=False, line0=14//2, line1=17//2, column0=None, column1=None)
 
 ## FAST SEQUENCE
 seq = [fs.Trig_out(trig=[False]*4)]
@@ -90,7 +89,7 @@ seq += [fs.JumpFor(target=1, count=0)] # play infinitely
 seq += [fs.End()]
 
 instr.config_seq(slots={i:s for (i,s) in enumerate(seq)}, 
-                    us_per_DAC=100, 
+                    us_per_DAC=5, 
                     trig_reset_states=[True]*10, 
                     start_after=False, 
                     start_index=0)
@@ -98,11 +97,11 @@ instr.config_seq(slots={i:s for (i,s) in enumerate(seq)},
 ## READ CURRENT STATE
 SPI_state = instr.SPI_dump_all(output_to_console=True)
 instr.stop_seq()
-i0 = instr.SPI_read(0xA0, 1)[0]+0
+i0 = instr.SPI_read(0xA1, 1)[0]+0
 print(i0)
 print(((i0)%64)*2+1,seq[((i0)%64)*2+1])
 instr.start_seq(start_ind=((i0)%64)*2+1)
-time.sleep(10)
+time.sleep(2)
 
 # for i in range(2,64,2):
 #     if i>2:
@@ -126,6 +125,6 @@ time.sleep(10)
 # print(ans[1])
 
 # CLOSE INSTRUMENT
-instr.stop_seq()
+# instr.stop_seq()
 instr.FPGA.close()
 

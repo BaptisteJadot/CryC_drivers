@@ -32,6 +32,13 @@ DAC_dict['CMD_R4'] = {'panel':2, 'channel':4, 'lower_limit':0., 'upper_limit':1.
 DAC_dict['CMD_R5'] = {'panel':2, 'channel':5, 'lower_limit':0., 'upper_limit':1.8}
 DAC_dict['CMD_R6'] = {'panel':2, 'channel':6, 'lower_limit':0., 'upper_limit':1.8}
 
+DAC_dict['ADDR_0'] = {'panel':5, 'channel':0, 'lower_limit':0., 'upper_limit':1.8}
+DAC_dict['ADDR_1'] = {'panel':5, 'channel':1, 'lower_limit':0., 'upper_limit':1.8}
+DAC_dict['ADDR_2'] = {'panel':5, 'channel':2, 'lower_limit':0., 'upper_limit':1.8}
+DAC_dict['ADDR_3'] = {'panel':5, 'channel':3, 'lower_limit':0., 'upper_limit':1.8}
+DAC_dict['ADDR_4'] = {'panel':5, 'channel':4, 'lower_limit':0., 'upper_limit':1.8}
+DAC_dict['ADDR_5'] = {'panel':5, 'channel':5, 'lower_limit':0., 'upper_limit':1.8}
+
 
 DAC_dict['dummy'] = {'panel':1, 'channel':2, 'lower_limit':0., 'upper_limit':1.8}
 

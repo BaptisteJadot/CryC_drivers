@@ -43,7 +43,7 @@ DAC_val['CMD_R4'] = 0.
 DAC_val['CMD_R5'] = 0.
 DAC_val['CMD_R6'] = 0.
 
-DAC_val['dummy'] = 1.5
+DAC_val['dummy'] = 0.3
 instr.update_DAC(DAC_val)
 
 ## SPI
@@ -76,11 +76,11 @@ while i0 != 0:
 SPI_state = instr.SPI_dump_all(output_to_console=True)
 print(instr.get_ADC_data())
 
-## PREPARE SEQ
+# PREPARE SEQ
 v = [0.5]*64
 # v[14] = 1.
 # v = np.linspace(0,0.63,64)+0.2
-v[16] = 1.5
+v[16] = 0.3
 instr.set_output(mux_mat=False, line0=None, line1=None, column0=16//2, column1=None)
 
 seq = [fs.Trig_out(trig=[False]*4)]
@@ -137,7 +137,7 @@ while k < Ntot:
         last_read = t
     if t - last_save > dt_save or k >= Ntot:
         h = int((t - t0)//3600)
-        fname = f'''D:\Baptiste\CIR7\\4K\\Remanence_weekend\\remanence_weekend_15V_{h}.h5'''
+        fname = f'''D:\Baptiste\CIR7\\4K\\Remanence_weekend\\remanence_weekend_03V_{h}.h5'''
         with h5.File(fname, 'a') as f:
             if 'data' in f.keys():
                 del f['data']
