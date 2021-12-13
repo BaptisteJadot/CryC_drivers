@@ -62,7 +62,6 @@ DAC_val['CMD_R6'] = 0.
 DAC_val['ADDR_0'] = 1.8
 DAC_val['ADDR_1'] = 0.
 DAC_val['ADDR_2'] = 0.
-DAC_val['ADDR_3'] = 0.
 DAC_val['ADDR_4'] = 0.
 DAC_val['ADDR_5'] = 0.
 instr.update_DAC(DAC_val)
@@ -113,14 +112,14 @@ print(((i0)%64)*2+1,seq[((i0)%64)*2+1])
 time.sleep(0.1)
 
 ## RAMP ADDRESS AND RECORD CONSO
-addr = "VBGNM"
+addr = "RESETN"
 if addr != "ADDR_5":
     DAC_values["ADDR_5"] = "floating"
-Vsweep = np.linspace(0., 3., 301)
-V18A = np.zeros((len(Vsweep), 2))
-V18N = np.zeros((len(Vsweep), 2))
-I18A = np.zeros((len(Vsweep), 2))
-I18N = np.zeros((len(Vsweep), 2))
+Vsweep = np.linspace(0., 1.8, 181)
+V10C = np.zeros((len(Vsweep), 2))
+V10M = np.zeros((len(Vsweep), 2))
+I10C = np.zeros((len(Vsweep), 2))
+I10M = np.zeros((len(Vsweep), 2))
 
 # first with sequence OFF
 for i, Vi in enumerate(Vsweep):
@@ -128,7 +127,7 @@ for i, Vi in enumerate(Vsweep):
     time.sleep(0.02)
     tup = read_IV(smu)
     print(f"CLK OFF {i} \t {tup[0]*tup[1]*1e6:.2f} \t {tup[2]*tup[3]*1e6:.2f}")
-    I18A[i, 0], V18A[i, 0], I18N[i, 0], V18N[i, 0] = tup
+    I10C[i, 0], V10C[i, 0], I10M[i, 0], V10M[i, 0] = tup
 
 # next with sequence ON
 instr.start_seq(start_ind=((i0)%64)*2+1)
@@ -137,33 +136,34 @@ for i, Vi in enumerate(Vsweep):
     time.sleep(0.02)
     tup = read_IV(smu)
     print(f"CLK ON {i} \t {tup[0]*tup[1]*1e6:.2f} \t {tup[2]*tup[3]*1e6:.2f}")
-    I18A[i, 1], V18A[i, 1], I18N[i, 1], V18N[i, 1] = tup
+    I10C[i, 1], V10C[i, 1], I10M[i, 1], V10M[i, 1] = tup
 
 ## CLOSE INSTRUMENT
 instr.stop_seq()
 instr.FPGA.close()
 
 ## SAVE
-fname = "D:/Baptiste/CIR7/RT/Conso_vs_BG.h5"
+fname = "D:/Baptiste/CIR7/RT/Conso_vs_inputs.h5"
 with h5.File(fname, 'a') as f:
-    grp = f.create_group(addr)
-    grp.create_dataset('V18A', data=V18A)
-    grp.create_dataset('I18A', data=I18A)
-    grp.create_dataset('V18N', data=V18N)
-    grp.create_dataset('I18N', data=I18N)
-    grp.create_dataset('Vsweep', data=Vsweep)
-    grp.create_dataset('CLK_freq_kHz', data=np.array([0., f_kHz]))
-    grp.attrs.create("SPI_settings", SPI_state)
-    grp.attrs.create("i0", i0)
-    grp.attrs.create("fast_seq", "\n".join([s.__str__() for s in seq]))
-    grp.attrs.create("Comment", "ADDR0 & ADDR5 floating, " + DAC_values.__str__())
+    # grp = f.create_group(addr)
+    grp = f[addr]
+    grp.create_dataset('V10C', data=V10C)
+    grp.create_dataset('I10C', data=I10C)
+    grp.create_dataset('V10M', data=V10M)
+    grp.create_dataset('I10M', data=I10M)
+    # grp.create_dataset('Vsweep', data=Vsweep)
+    # grp.create_dataset('CLK_freq_kHz', data=np.array([0., f_kHz]))
+    # grp.attrs.create("SPI_settings", SPI_state)
+    # grp.attrs.create("i0", i0)
+    # grp.attrs.create("fast_seq", "\n".join([s.__str__() for s in seq]))
+    # grp.attrs.create("Comment", "ADDR0 & ADDR5 floating, " + DAC_values.__str__())
 
 
 ## PLOT
-runfile('D:/Baptiste/CIR7/RT/CIR7_plot_conso_vs_ADDR.py', wdir='D:/Baptiste/CIR7/RT')
+# runfile('D:/Baptiste/CIR7/RT/CIR7_plot_conso_vs_BG.py', wdir='D:/Baptiste/CIR7/RT')
 # plt.figure(492);plt.ion()
-# plt.plot(Vsweep, I18A[:, 0]*V18A[:, 0]*1e6, label=f"PDD18A vs {addr}")
+# plt.plot(Vsweep, I10C[:, 0]*V10C[:, 0]*1e6, label=f"PDDC vs {addr}")
 
 # plt.figure(493);plt.ion()
-# plt.plot(Vsweep, I18N[:, 0]*V18N[:, 0]*1e6, label=f"PDD18N vs {addr}")
+# plt.plot(Vsweep, I10M[:, 0]*V10M[:, 0]*1e6, label=f"PDDM vs {addr}")
 

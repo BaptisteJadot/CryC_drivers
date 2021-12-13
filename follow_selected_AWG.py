@@ -13,14 +13,14 @@ import Fastseq_elmts as fs
 import numpy as np
 import time
 
-def test_clk(awg, clk_rate_MHz, Nclk):
+def test_clk(awg, clk_rate_MHz, Nclk, amplitude=0.9):
     ## READ INDEX
-    i0 = instr.SPI_read(0xA0, 1)[0]
+    i0 = instr.SPI_read(0xA1, 1)[0]
     time.sleep(0.1)
 
     ## SEND 5 CLOCKS    
     L0 = int(AWG_SAMPLING_RATE_MHz / clk_rate_MHz / 2)
-    CLK = [0., 0.] + [0., 2.3] * Nclk + [0., 0.]
+    CLK = [0., 0.] + [-amplitude, amplitude] * Nclk + [0., 0.]
     CLK = np.tile(CLK, (L0, 1)).flatten("F")
     V_reset = np.zeros_like(CLK)
     
@@ -37,7 +37,7 @@ def test_clk(awg, clk_rate_MHz, Nclk):
     time.sleep(0.5)
     
     ## READ AGAIN
-    i1 = instr.SPI_read(0xA0, 1)[0]
+    i1 = instr.SPI_read(0xA1, 1)[0]
     time.sleep(0.1)
     return (i0, i1)
 
@@ -71,6 +71,15 @@ DAC_val['CMD_R3'] = 0.
 DAC_val['CMD_R4'] = 0.
 DAC_val['CMD_R5'] = 0.
 DAC_val['CMD_R6'] = 0.
+
+DAC_val['ADDR_0'] = 1.8
+DAC_val['ADDR_1'] = 0.
+DAC_val['ADDR_2'] = 0.
+DAC_val['ADDR_4'] = 0.
+
+DAC_val['Veven_DC'] = 0.9
+DAC_val['Vodd_DC'] = 0.9
+DAC_val['CLK_DC'] = 0.85
 instr.update_DAC(DAC_val)
 
 ## SPI
@@ -94,16 +103,17 @@ awg.set_sampling_rate(sampl_rate=AWG_SAMPLING_RATE_MHz * 1e6)
 # lmt_counter : ok until 350+-2 kHz, ensuite progressivement 1, 2, 3 trig manqués  
 # idem register & counter
 # s'améliore en augmentant l'amplitude de CLK jusqu'à 3.2MHz avec 2.8V
-clk_rate_MHz = 0.64
+clk_rate_MHz = 300.
 real_freq = AWG_SAMPLING_RATE_MHz / int(AWG_SAMPLING_RATE_MHz / clk_rate_MHz / 2) / 2
-Nclk = 1
-print(f"CLK rate {real_freq} MHz")
+Nclk = 5
+amplitude = 1.2
+print(f"CLK rate {real_freq} MHz - Amplitude +-{amplitude}V")
 for k in range(4):
-    (i0, i1) = test_clk(awg, clk_rate_MHz, Nclk)
+    (i0, i1) = test_clk(awg, clk_rate_MHz, Nclk, amplitude)
     if (i1 - i0) % 64 == Nclk:
-        print("Pass")
+        print("Success")
     else:
-        print(f"Failed : i0={i0}, i1={i1}, i1-i0={(i1 - i0) % 64}")
+        print(f"Failed: i0={i0}, i1={i1}, i1-i0={(i1 - i0) % 64}")
     time.sleep(0.5)
 
 

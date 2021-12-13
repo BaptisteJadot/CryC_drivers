@@ -9,7 +9,7 @@ import pyvisa
 import time
 import numpy as np
 
-AWG_SAMPLING_RATE_MHz = 64.
+AWG_SAMPLING_RATE_MHz = 1200
 
 def build_clk(Nclk, clk_rate_MHz):
     # check arguments
@@ -20,7 +20,7 @@ def build_clk(Nclk, clk_rate_MHz):
         print(f"CLK frequency rounded to {AWG_SAMPLING_RATE_MHz / (2 * L0)} MHz.")
     
     # build
-    CLK = [0., 0.] + [0., 1.8] * Nclk + [0., 0.]
+    CLK = [0., 0.] + [-1.2, 1.2] * Nclk + [0., 0.]
     CLK = np.tile(CLK, (L0, 1)).flatten("F")
     return CLK, L0
     
@@ -164,7 +164,9 @@ class AWGDriver():
         self.instr.write(f"SOUR{channel}:WAV \"{wfm_name}\"") # set waveform as active
 
 if __name__=="__main__":
-
+    
+    # runfile("follow_selected_AWG.py")
+    
     AWG_VISA = "TCPIP::192.168.1.12::4000::SOCKET" 
     awg = AWGDriver(AWG_VISA)
     
@@ -174,6 +176,9 @@ if __name__=="__main__":
     
     sine = np.sin(np.linspace(0, 6, 601) * np.pi)
     awg.send_and_place_wf(channel=1, wf=sine, m1=None, m2=None)
-
+    awg.send_and_place_wf(channel=2, wf=-sine, m1=None, m2=None)
+    awg.send_and_place_wf(channel=3, wf=sine, m1=None, m2=None)
+    awg.send_and_place_wf(channel=4, wf=-sine, m1=None, m2=None)
+    
     # close instrument
     awg.close()

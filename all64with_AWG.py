@@ -45,6 +45,15 @@ DAC_val['CMD_R3'] = 0.
 DAC_val['CMD_R4'] = 0.
 DAC_val['CMD_R5'] = 0.
 DAC_val['CMD_R6'] = 0.
+
+DAC_val['ADDR_0'] = 1.8
+DAC_val['ADDR_1'] = 0.
+DAC_val['ADDR_2'] = 0.
+DAC_val['ADDR_4'] = 0.
+
+DAC_val['Veven_DC'] = 0.9
+DAC_val['Vodd_DC'] = 0.9
+DAC_val['CLK_DC'] = 0.9
 instr.update_DAC(DAC_val)
 
 ## SPI
@@ -71,8 +80,8 @@ i0 = (i0) % 64
 print(i0)
 if i0 != 0:
     # _, _, CLK_reset = build_waveforms(values=[0.] * ((14 - i0) % 64), clk_rate_MHz=0.05, data_to_clk_us=0, current_index=0, current_val=0.)
-    L = int(AWG_SAMPLING_RATE_MHz / 0.02)
-    CLK_reset = [0., 0.] + [0., 1.8] * ((0 - i0) % 64) + [0., 0.]
+    L = int(AWG_SAMPLING_RATE_MHz / 1.)
+    CLK_reset = [0., 0.] + [-1.2, 1.2] * ((0 - i0) % 64) + [0., 0.]
     CLK_reset = np.tile(CLK_reset, (L, 1)).flatten("F")
     V_reset = np.zeros_like(CLK_reset)
     awg.send_and_place_wf(channel=1, wf=V_reset)
@@ -91,14 +100,15 @@ SPI_state = instr.SPI_dump_all(output_to_console=True)
 i1 = instr.SPI_read(0xA0, 1)[0]
 
 ## AWG
-values = [0.5]*64
-values[14] = 0.3
-# values[17] = 0.
-do_save = False
-fname = "dummy.h5"
+values = [0.]*64
+values[14] = -0.3
+values[17] = 0.3
+values = values*5
+do_save = True
 # values = values[i0:] + values[:i0]
 # values = values[i0:]
-clk_rate_MHz = 0.16
+clk_rate_MHz = 256
+fname = f"AWG64_CLK{int(clk_rate_MHz*1000)}kHz_5times.h5"
 data_to_clk_us = 1 / clk_rate_MHz * 0.5
 Veven, Vodd, CLK = build_waveforms(values, clk_rate_MHz, data_to_clk_us, current_index=i0, current_val=values[-1])
 
@@ -109,16 +119,19 @@ awg.send_and_place_wf(channel=3, wf=CLK)
 awg.send_and_place_wf(channel=4, wf=CLK)
 
 ## SCOPE
-SCOPE_VISA = "TCPIP::192.168.1.46::INSTR"
+SCOPE_VISA = "TCPIP::192.168.1.25::INSTR"
 scope = ScopeDriver(SCOPE_VISA)
-# _ = scope.check_errors()
+_ = scope.check_errors()
 
-# # config
-# scope.stop()
-# scope.set_trigger(source="CH4", level=1., edge="POS")
-# for k in range(1, 5):
-#     scope.set_vertical(chan_id=k, active=True, volts_per_div=0.25, offset_volt=1.)
-# scope.set_horizontal(sec_per_div=20e-6, sec_offset=100e-6)
+# config
+scope.stop()
+_ = scope.check_errors()
+scope.set_trigger(source="CH4", level=0.5, edge="POS")
+for k in range(1, 5):
+    scope.set_vertical(chan_id=k, active=True, volts_per_div=0.5, offset_volt=0.)
+scope.set_horizontal(sec_per_div=500e-9, sec_offset=2e-6)
+time.sleep(0.5)
+_ = scope.check_errors()
 
 # arm trigger
 scope.start_acq(mode="NORM", wfm_count=1)
@@ -147,7 +160,7 @@ plt.legend()
 # init_move_dt = np.dtype({"names":["name","value"],"formats":["S100","f8"]})
 # DAC_val_arr = np.array([(key, val) for key, val in DAC_val.items()], dtype=init_move_dt)
 if do_save:
-    with h5.File(r"D:\Baptiste\CIR7\\4K\\All_64_with_AWG\\" + fname, "a") as f:
+    with h5.File(r"D:\Baptiste\CIR7\\RT\\All_64_with_AWG\\" + fname, "a") as f:
         grp = f.create_group("AWG")
         grp.create_dataset("Veven", data=Veven)
         grp.create_dataset("Vodd", data=Vodd)

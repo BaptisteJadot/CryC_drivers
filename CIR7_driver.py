@@ -309,6 +309,47 @@ class CIR7Driver():
         # time.sleep(0.1)
         # self.update_DAC({'OSC_VCO':0.}) # disable
         # self.set_clk(int_clk=False, osc_vco=0.) # 0MHz
+        
+    def reset_with_AWG(self, awg):
+        """
+        Perform a hard and a soft reset.
+        """
+        # hard reset   
+        self.update_DAC({'OSC_VCO':0.46}) # 100MHz
+        self.update_DAC({'RESETN':0.})
+        time.sleep(0.1)
+        self.update_DAC({'RESETN':1.8})
+        time.sleep(0.1)
+        self.update_DAC({'OSC_VCO':0.}) # disable
+        
+        ## soft reset with EXT CLK
+        # stop AWG
+        awg.stop()
+        CLK = np.array([0., 0.] + [-0.9, 0.9] * 5 + [0., 0.])
+        V_empty = np.zeros_like(CLK)
+        awg.send_and_place_wf(channel=1, wf=V_empty)
+        awg.send_and_place_wf(channel=2, wf=V_empty)
+        awg.send_and_place_wf(channel=3, wf=CLK)
+        awg.send_and_place_wf(channel=4, wf=V_empty)
+        awg.set_sampling_rate(10e6)
+        # run
+        awg.wait_opc()
+        awg.run()
+        awg.set_all_outputs("ON")
+        awg.wait_opc()
+        
+        # send soft reset
+        self.SPI_write(0xFF, 0) 
+        time.sleep(0.1)
+        # send soft CLK
+        awg.force_trig()
+        # disable soft reset
+        self.SPI_write(0xFF, 1) 
+        time.sleep(0.1)
+        # send soft CLK
+        awg.force_trig()
+        time.sleep(0.1)
+        awg.stop()
 
     def SPI_sram_write(self, addr, data, sel_mem='both'):
         """
